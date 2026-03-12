@@ -3,6 +3,7 @@
  * Design: エディトリアル × ワークスペース — 参考デザインに準拠
  * A4用紙を模したキャンバスに条文をドラッグ＆ドロップで配置
  * フローティングツールバー付き
+ * 改善: 複数形式ダウンロード対応
  */
 
 import { useState, useCallback, useRef } from "react";
@@ -25,6 +26,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useDocument } from "@/contexts/DocumentContext";
 import type { DocumentArticle } from "@/lib/docx-generator";
 import { generateDocx } from "@/lib/docx-generator";
+import { generateTxt, generateMarkdown } from "@/lib/export-utils";
 import {
   GripVertical,
   X,
@@ -40,8 +42,15 @@ import {
   MessageSquare,
   Share2,
   PlusCircle,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
@@ -215,14 +224,26 @@ export default function PaperEditor() {
     [addArticle]
   );
 
-  const handleDownload = useCallback(async () => {
+  const handleDownload = useCallback(async (format: "docx" | "txt" | "md") => {
     if (clippedArticles.length === 0) return;
     setIsGenerating(true);
     try {
-      await generateDocx(clippedArticles, documentTitle);
-      toast.success("Wordファイルをダウンロードしました");
+      switch (format) {
+        case "docx":
+          await generateDocx(clippedArticles, documentTitle);
+          toast.success("Wordファイルをダウンロードしました");
+          break;
+        case "txt":
+          generateTxt(clippedArticles, documentTitle);
+          toast.success("テキストファイルをダウンロードしました");
+          break;
+        case "md":
+          generateMarkdown(clippedArticles, documentTitle);
+          toast.success("Markdownファイルをダウンロードしました");
+          break;
+      }
     } catch (err) {
-      console.error("Word生成エラー:", err);
+      console.error("ファイル生成エラー:", err);
       toast.error("ファイル生成に失敗しました");
     } finally {
       setIsGenerating(false);
@@ -255,19 +276,37 @@ export default function PaperEditor() {
               クリア
             </Button>
           )}
-          <Button
-            onClick={handleDownload}
-            disabled={clippedArticles.length === 0 || isGenerating}
-            size="sm"
-            className="h-7 px-3 text-xs bg-primary hover:bg-primary/90 text-white font-bold"
-          >
-            {isGenerating ? (
-              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-            ) : (
-              <FileDown className="w-3.5 h-3.5 mr-1.5" />
-            )}
-            Wordでダウンロード
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                disabled={clippedArticles.length === 0 || isGenerating}
+                size="sm"
+                className="h-7 px-3 text-xs bg-primary hover:bg-primary/90 text-white font-bold"
+              >
+                {isGenerating ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <FileDown className="w-3.5 h-3.5 mr-1.5" />
+                )}
+                ダウンロード
+                <ChevronDown className="w-3 h-3 ml-1 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={() => handleDownload("docx")} className="gap-2 text-xs">
+                <FileDown className="w-3.5 h-3.5" />
+                Word (.docx)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDownload("txt")} className="gap-2 text-xs">
+                <FileDown className="w-3.5 h-3.5" />
+                テキスト (.txt)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDownload("md")} className="gap-2 text-xs">
+                <FileDown className="w-3.5 h-3.5" />
+                Markdown (.md)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -371,29 +410,36 @@ export default function PaperEditor() {
       {/* Floating bottom toolbar */}
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-white border border-border rounded-full shadow-xl px-6 py-2.5 flex items-center gap-5 z-10 pointer-events-auto">
         <div className="flex items-center gap-3 border-r border-border pr-5">
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="元に戻す">
+          <button className="text-muted-foreground hover:text-primary transition-colors" title="元に戻す"
+            onClick={() => toast.info("元に戻す機能は準備中です")}>
             <Undo2 className="w-4 h-4" />
           </button>
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="やり直し">
+          <button className="text-muted-foreground hover:text-primary transition-colors" title="やり直し"
+            onClick={() => toast.info("やり直し機能は準備中です")}>
             <Redo2 className="w-4 h-4" />
           </button>
         </div>
         <div className="flex items-center gap-3 border-r border-border pr-5">
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="太字">
+          <button className="text-muted-foreground hover:text-primary transition-colors" title="太字"
+            onClick={() => toast.info("太字機能は準備中です")}>
             <Bold className="w-4 h-4" />
           </button>
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="リスト">
+          <button className="text-muted-foreground hover:text-primary transition-colors" title="リスト"
+            onClick={() => toast.info("リスト機能は準備中です")}>
             <List className="w-4 h-4" />
           </button>
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="両端揃え">
+          <button className="text-muted-foreground hover:text-primary transition-colors" title="両端揃え"
+            onClick={() => toast.info("両端揃え機能は準備中です")}>
             <AlignJustify className="w-4 h-4" />
           </button>
         </div>
         <div className="flex items-center gap-3">
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="コメント">
+          <button className="text-muted-foreground hover:text-primary transition-colors" title="コメント"
+            onClick={() => toast.info("コメント機能は準備中です")}>
             <MessageSquare className="w-4 h-4" />
           </button>
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="共有">
+          <button className="text-muted-foreground hover:text-primary transition-colors" title="共有"
+            onClick={() => toast.info("共有機能は準備中です")}>
             <Share2 className="w-4 h-4" />
           </button>
         </div>

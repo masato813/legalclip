@@ -2,12 +2,12 @@
  * LawSearch - 法令検索サイドバー
  * Design: エディトリアル × ワークスペース — 参考デザインに準拠
  * 白背景、クリーンなリスト表示
+ * 改善: スクロール修正、条文フィルタ検索
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Search,
   BookOpen,
@@ -20,6 +20,9 @@ import {
   RefreshCw,
   Star,
   History,
+  Filter,
+  X,
+  Download,
 } from "lucide-react";
 import {
   searchLaws,
@@ -30,6 +33,7 @@ import {
   type LawListItem,
   type ParsedArticle,
   type LawStructure,
+  type LawFullTextNode,
 } from "@/lib/egov-api";
 import { useDocument } from "@/contexts/DocumentContext";
 import type { DocumentArticle } from "@/lib/docx-generator";
@@ -45,7 +49,11 @@ const QUICK_ACCESS_LAWS = [
   { name: "地方自治法", query: "地方自治法" },
 ];
 
-export default function LawSearch() {
+interface LawSearchProps {
+  onDownloadFullLaw?: (lawTitle: string, lawNum: string, articles: ParsedArticle[], lawFullText: LawFullTextNode) => void;
+}
+
+export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<LawListItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -59,7 +67,11 @@ export default function LawSearch() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [totalCount, setTotalCount] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
+  const [articleFilter, setArticleFilter] = useState("");
+  const [showFilter, setShowFilter] = useState(false);
+  const [lawFullTextData, setLawFullTextData] = useState<LawFullTextNode | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const { addArticle, clippedArticles } = useDocument();
 
@@ -93,7 +105,10 @@ export default function LawSearch() {
       setLawNum(law.law_info.law_num);
       setAllArticles(articles);
       setStructures(struct);
+      setLawFullTextData(data.law_full_text);
       setViewState("articles");
+      setArticleFilter("");
+      setShowFilter(false);
       // Auto-expand first structure
       if (struct.length > 0) {
         const firstKey = `/${struct[0].tag}-${struct[0].num}-${struct[0].title}`;
@@ -113,6 +128,9 @@ export default function LawSearch() {
     setStructures([]);
     setAllArticles([]);
     setExpandedSections(new Set());
+    setArticleFilter("");
+    setShowFilter(false);
+    setLawFullTextData(null);
   }, []);
 
   const toggleSection = useCallback((key: string) => {
@@ -163,6 +181,52 @@ export default function LawSearch() {
     },
     [selectedLaw, lawTitle, lawNum]
   );
+
+  // Filter articles by article number or caption
+  const matchesFilter = useCallback((article: ParsedArticle) => {
+    if (!articleFilter.trim()) return true;
+    const f = articleFilter.trim().toLowerCase();
+    return (
+      article.articleTitle.toLowerCase().includes(f) ||
+      article.articleCaption.toLowerCase().includes(f) ||
+      article.articleNum.includes(f)
+    );
+  }, [articleFilter]);
+
+  // Filter structures recursively
+  const filterStructure = useCallback((struct: LawStructure): LawStructure | null => {
+    if (!articleFilter.trim()) return struct;
+    
+    const filteredArticles = struct.articles.filter(matchesFilter);
+    const filteredChildren = struct.children
+      .map(filterStructure)
+      .filter((c): c is LawStructure => c !== null);
+    
+    if (filteredArticles.length === 0 && filteredChildren.length === 0) return null;
+    
+    return { ...struct, articles: filteredArticles, children: filteredChildren };
+  }, [articleFilter, matchesFilter]);
+
+  // Filtered structures
+  const filteredStructures = useMemo(() => {
+    if (!articleFilter.trim()) return structures;
+    return structures
+      .map(filterStructure)
+      .filter((s): s is LawStructure => s !== null);
+  }, [structures, articleFilter, filterStructure]);
+
+  // Filtered flat articles
+  const filteredArticles = useMemo(() => {
+    if (!articleFilter.trim()) return allArticles;
+    return allArticles.filter(matchesFilter);
+  }, [allArticles, articleFilter, matchesFilter]);
+
+  // Handle full law download
+  const handleFullLawDownload = useCallback(() => {
+    if (onDownloadFullLaw && lawFullTextData) {
+      onDownloadFullLaw(lawTitle, lawNum, allArticles, lawFullTextData);
+    }
+  }, [onDownloadFullLaw, lawTitle, lawNum, allArticles, lawFullTextData]);
 
   const renderArticleCard = (article: ParsedArticle, index: number) => {
     const clipped = isArticleClipped(article);
@@ -225,7 +289,8 @@ export default function LawSearch() {
 
   const renderStructure = (struct: LawStructure, depth = 0, parentKey = ""): React.ReactNode => {
     const sectionKey = `${parentKey}/${struct.tag}-${struct.num}-${struct.title}`;
-    const isExpanded = expandedSections.has(sectionKey);
+    // Auto-expand when filtering
+    const isExpanded = articleFilter.trim() ? true : expandedSections.has(sectionKey);
     const hasContent = struct.articles.length > 0 || struct.children.length > 0;
 
     return (
@@ -263,12 +328,12 @@ export default function LawSearch() {
               className="overflow-hidden"
             >
               <div
-                className="ml-4 mt-1 space-y-0 border-l-2 border-slate-100 pl-2"
+                className="mt-1 space-y-0 border-l-2 border-slate-100 pl-2"
                 style={{ marginLeft: `${depth * 12 + 20}px` }}
               >
                 {struct.articles.map((article, i) => renderArticleCard(article, i))}
               </div>
-              {struct.children.map((child) => renderStructure(child, depth + 1, sectionKey))}
+              {struct.children.map((child, idx) => renderStructure(child, depth + 1, `${sectionKey}-${idx}`))}
             </motion.div>
           )}
         </AnimatePresence>
@@ -277,7 +342,7 @@ export default function LawSearch() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-white overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-slate-100 shrink-0">
         {viewState === "search" ? (
@@ -293,7 +358,7 @@ export default function LawSearch() {
                   setSearchResults([]);
                   setHasSearched(false);
                   setQuery("");
-                  toast.info("リフレッシュしました");
+                  toast.info("リセットしました");
                 }}
                 title="リセット"
               >
@@ -327,15 +392,81 @@ export default function LawSearch() {
                   {lawTitle}
                 </h3>
                 <p className="text-[10px] text-slate-500 mt-0.5">{lawNum}</p>
-                <p className="text-[10px] text-slate-500">全{allArticles.length}条</p>
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-[10px] text-slate-500">全{allArticles.length}条</p>
+                  <div className="flex items-center gap-1">
+                    {onDownloadFullLaw && (
+                      <button
+                        onClick={handleFullLawDownload}
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 hover:bg-primary/10 hover:text-primary transition-colors font-medium flex items-center gap-1"
+                        title="この法令の全文をダウンロード"
+                      >
+                        <Download className="w-3 h-3" />
+                        全文DL
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowFilter(!showFilter)}
+                      className={`text-[10px] px-2 py-0.5 rounded transition-colors font-medium flex items-center gap-1 ${
+                        showFilter || articleFilter
+                          ? "bg-primary/10 text-primary"
+                          : "bg-slate-100 text-slate-600 hover:bg-primary/10 hover:text-primary"
+                      }`}
+                      title="条文を絞り込み"
+                    >
+                      <Filter className="w-3 h-3" />
+                      絞り込み
+                    </button>
+                  </div>
+                </div>
+                {/* Article filter input */}
+                <AnimatePresence>
+                  {showFilter && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="relative mt-2">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                        <input
+                          value={articleFilter}
+                          onChange={(e) => setArticleFilter(e.target.value)}
+                          placeholder="条文番号・見出しで絞り込み（例: 第百条）"
+                          className="w-full pl-8 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary/30 outline-none transition-all"
+                          autoFocus
+                        />
+                        {articleFilter && (
+                          <button
+                            onClick={() => setArticleFilter("")}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      {articleFilter && (
+                        <p className="text-[10px] text-primary mt-1">
+                          {filteredArticles.length}件の条文が該当
+                        </p>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Content */}
-      <ScrollArea className="flex-1 custom-scrollbar">
+      {/* Content - native scroll instead of ScrollArea for reliable scrolling */}
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto overscroll-contain"
+        style={{ minHeight: 0 }}
+      >
         <div className="p-2">
           {viewState === "search" && (
             <>
@@ -434,27 +565,40 @@ export default function LawSearch() {
                 </div>
               )}
 
-              {!isLoadingLaw && structures.length > 0 && (
+              {!isLoadingLaw && filteredStructures.length > 0 && (
                 <div>
                   <p className="text-[10px] text-slate-400 mb-2 px-3">
                     条文をドラッグして右のペーパーにドロップ、または「追加」ボタンをクリック
                   </p>
-                  {structures.map((struct, idx) => renderStructure(struct, 0, `root-${idx}`))}
+                  {filteredStructures.map((struct, idx) => renderStructure(struct, 0, `root-${idx}`))}
                 </div>
               )}
 
-              {!isLoadingLaw && structures.length === 0 && allArticles.length > 0 && (
+              {!isLoadingLaw && filteredStructures.length === 0 && filteredArticles.length > 0 && (
                 <div className="px-2">
                   <p className="text-[10px] text-slate-400 mb-2">
                     条文をドラッグして右のペーパーにドロップ
                   </p>
-                  {allArticles.map((article, i) => renderArticleCard(article, i))}
+                  {filteredArticles.map((article, i) => renderArticleCard(article, i))}
+                </div>
+              )}
+
+              {!isLoadingLaw && articleFilter && filteredArticles.length === 0 && (
+                <div className="text-center py-8">
+                  <Filter className="w-6 h-6 text-slate-200 mx-auto mb-2" />
+                  <p className="text-xs text-slate-400">「{articleFilter}」に該当する条文がありません</p>
+                  <button
+                    onClick={() => setArticleFilter("")}
+                    className="text-xs text-primary mt-2 hover:underline"
+                  >
+                    フィルタをクリア
+                  </button>
                 </div>
               )}
             </>
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

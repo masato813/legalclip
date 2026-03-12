@@ -9,35 +9,25 @@ import type { DocumentArticle } from "@/lib/docx-generator";
 
 interface HistoryEntry {
   articles: DocumentArticle[];
-  label: string; // 操作の説明（例: "第一条を追加"）
+  label: string;
 }
 
 interface DocumentContextType {
-  /** ペーパーに配置された条文リスト */
   clippedArticles: DocumentArticle[];
-  /** 条文を追加 */
   addArticle: (article: DocumentArticle) => void;
-  /** 条文を削除 */
+  /** 複数条文を一括追加 */
+  addArticles: (articles: DocumentArticle[]) => void;
   removeArticle: (id: string) => void;
-  /** 条文の順序を変更 */
   reorderArticles: (oldIndex: number, newIndex: number) => void;
-  /** 全条文をクリア */
   clearArticles: () => void;
-  /** ドキュメントタイトル */
   documentTitle: string;
   setDocumentTitle: (title: string) => void;
-  /** Undo */
   undo: () => void;
-  /** Redo */
   redo: () => void;
-  /** Undo可能か */
   canUndo: boolean;
-  /** Redo可能か */
   canRedo: boolean;
-  /** 最後のUndo/Redo操作のラベル */
   lastUndoLabel: string;
   lastRedoLabel: string;
-  /** 文書内検索クエリ */
   searchQuery: string;
   setSearchQuery: (query: string) => void;
 }
@@ -51,38 +41,34 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
   const [documentTitle, setDocumentTitle] = useState("条文抜粋");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Undo/Redo stacks
   const undoStack = useRef<HistoryEntry[]>([]);
   const redoStack = useRef<HistoryEntry[]>([]);
   const [undoCount, setUndoCount] = useState(0);
   const [redoCount, setRedoCount] = useState(0);
 
-  // Push current state to undo stack before making changes
-  const pushUndo = useCallback((label: string) => {
-    setClippedArticles((current) => {
-      undoStack.current.push({ articles: [...current], label });
-      if (undoStack.current.length > MAX_HISTORY) {
-        undoStack.current.shift();
-      }
-      // Clear redo stack on new action
-      redoStack.current = [];
-      setUndoCount(undoStack.current.length);
-      setRedoCount(0);
-      return current; // Don't change state here
-    });
-  }, []);
-
   const addArticle = useCallback((article: DocumentArticle) => {
     setClippedArticles((prev) => {
-      // 重複チェック
       if (prev.some((a) => a.id === article.id)) return prev;
-      // Push undo
       undoStack.current.push({ articles: [...prev], label: `${article.articleTitle}を追加` });
       if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
       redoStack.current = [];
       setUndoCount(undoStack.current.length);
       setRedoCount(0);
       return [...prev, article];
+    });
+  }, []);
+
+  const addArticles = useCallback((articles: DocumentArticle[]) => {
+    setClippedArticles((prev) => {
+      // 重複を除外
+      const newArticles = articles.filter((a) => !prev.some((p) => p.id === a.id));
+      if (newArticles.length === 0) return prev;
+      undoStack.current.push({ articles: [...prev], label: `${newArticles.length}条を一括追加` });
+      if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
+      redoStack.current = [];
+      setUndoCount(undoStack.current.length);
+      setRedoCount(0);
+      return [...prev, ...newArticles];
     });
   }, []);
 
@@ -157,6 +143,7 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
       value={{
         clippedArticles,
         addArticle,
+        addArticles,
         removeArticle,
         reorderArticles,
         clearArticles,

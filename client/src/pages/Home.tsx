@@ -16,7 +16,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Scale,
-  Search,
   FileDown,
   Loader2,
   ChevronDown,
@@ -398,36 +397,14 @@ function MainLayout() {
             </h1>
           </div>
           <nav className="flex items-center gap-6 ml-4">
-            <button
-              className="text-slate-600 hover:text-primary text-sm font-medium transition-colors py-3"
-              onClick={() => toast.info("ダッシュボード機能は準備中です")}
-            >
-              ダッシュボード
-            </button>
-            <button
-              className="text-slate-600 hover:text-primary text-sm font-medium transition-colors py-3"
-              onClick={() => toast.info("テンプレート機能は準備中です")}
-            >
-              テンプレート
-            </button>
-            <button className="text-primary text-sm font-semibold border-b-2 border-primary py-3">
+            <span className="text-primary text-sm font-semibold border-b-2 border-primary py-3">
               法律ライブラリ
-            </button>
+            </span>
           </nav>
         </div>
 
         {/* Right: Search + Download + Panel toggles */}
         <div className="flex items-center gap-4">
-          <div className="relative w-56 group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors w-4 h-4" />
-            <input
-              className="w-full pl-9 pr-4 py-1.5 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all outline-none"
-              placeholder="文書内を検索"
-              type="text"
-              onFocus={() => toast.info("文書内検索機能は準備中です")}
-            />
-          </div>
-
           <HeaderDownloadButton />
 
           <div className="h-8 w-px bg-slate-200 mx-1" />

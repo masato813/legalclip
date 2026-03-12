@@ -224,6 +224,7 @@ export default function PaperEditor() {
   } = useDocument();
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const [dragPreview, setDragPreview] = useState<DocumentArticle | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -283,8 +284,17 @@ export default function PaperEditor() {
   const handleExternalDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
-    setIsDragOver(true);
-  }, []);
+    if (!isDragOver) {
+      setIsDragOver(true);
+      // Try to parse the drag data for preview
+      try {
+        const types = e.dataTransfer.types;
+        if (types.includes("application/json") && !dragPreview) {
+          // We can't read data during dragover, but we set the flag
+        }
+      } catch {}
+    }
+  }, [isDragOver, dragPreview]);
 
   const handleExternalDragLeave = useCallback((e: React.DragEvent) => {
     const rect = paperRef.current?.getBoundingClientRect();
@@ -300,6 +310,7 @@ export default function PaperEditor() {
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragOver(false);
+      setDragPreview(null);
       try {
         const data = e.dataTransfer.getData("application/json");
         if (data) {
@@ -415,16 +426,23 @@ export default function PaperEditor() {
           }`}
           style={{ padding: "64px 56px" }}
         >
-          {/* Drop overlay hint */}
+          {/* Drop overlay hint with enhanced visual feedback */}
           {isDragOver && (
-            <div className="absolute inset-0 border-2 border-dashed border-primary/30 m-4 rounded pointer-events-none flex items-center justify-center z-10">
+            <div className="absolute inset-0 border-2 border-dashed border-primary/40 m-3 rounded-lg pointer-events-none z-10 bg-primary/5">
               <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-primary/10 px-5 py-2.5 rounded-full text-primary font-semibold flex items-center gap-2 text-sm"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className="absolute bottom-0 left-0 right-0 p-4"
               >
-                <PlusCircle className="w-4 h-4" />
-                ここに条文をドラッグ＆ドロップ
+                {/* Drop indicator at the bottom of existing articles */}
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-full h-1 bg-primary/40 rounded-full" />
+                  <div className="bg-primary text-white px-4 py-2 rounded-full font-semibold flex items-center gap-2 text-sm shadow-lg">
+                    <PlusCircle className="w-4 h-4" />
+                    ここにドロップして追加
+                  </div>
+                </div>
               </motion.div>
             </div>
           )}

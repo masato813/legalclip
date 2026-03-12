@@ -1,7 +1,7 @@
 /**
  * LawSearch - 法令検索サイドバー
  * Design: エディトリアル × ワークスペース
- * 改善: お気に入り・履歴機能（localStorage）、条文フィルタ、スクロール修正
+ * 機能: お気に入り・履歴（localStorage）、条文フィルタ、章単位一括追加
  */
 
 import { useState, useCallback, useRef, useMemo } from "react";
@@ -23,6 +23,7 @@ import {
   Download,
   Trash2,
   Clock,
+  PlusSquare,
 } from "lucide-react";
 import {
   searchLaws,
@@ -75,7 +76,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const { addArticle, clippedArticles } = useDocument();
+  const { addArticle, addArticles, clippedArticles } = useDocument();
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites();
   const { history, addToHistory, clearHistory } = useHistory();
 
@@ -115,9 +116,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
       setViewState("articles");
       setArticleFilter("");
       setShowFilter(false);
-      // Add to history
       addToHistory(law.law_info.law_id, title, law.law_info.law_num);
-      // Auto-expand first structure
       if (struct.length > 0) {
         const firstKey = `/${struct[0].tag}-${struct[0].num}-${struct[0].title}`;
         setExpandedSections(new Set([firstKey]));
@@ -130,7 +129,6 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     }
   }, [addToHistory]);
 
-  // Load law by ID (for favorites/history)
   const handleLoadLawById = useCallback(async (lawId: string, title: string, num: string) => {
     setIsLoadingLaw(true);
     setCurrentLawId(lawId);
@@ -182,44 +180,99 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     });
   }, []);
 
+  const makeLawId = useCallback((articleNum: string) => {
+    return `${currentLawId || selectedLaw?.law_info.law_id}-${articleNum}`;
+  }, [currentLawId, selectedLaw]);
+
+  const toDocArticle = useCallback((article: ParsedArticle): DocumentArticle => {
+    return {
+      id: makeLawId(article.articleNum),
+      lawTitle: lawTitle,
+      lawNum: lawNum,
+      articleTitle: article.articleTitle,
+      articleCaption: article.articleCaption,
+      paragraphs: article.paragraphs,
+    };
+  }, [makeLawId, lawTitle, lawNum]);
+
   const handleAddArticle = useCallback(
     (article: ParsedArticle) => {
-      const docArticle: DocumentArticle = {
-        id: `${currentLawId || selectedLaw?.law_info.law_id}-${article.articleNum}`,
-        lawTitle: lawTitle,
-        lawNum: lawNum,
-        articleTitle: article.articleTitle,
-        articleCaption: article.articleCaption,
-        paragraphs: article.paragraphs,
-      };
-      addArticle(docArticle);
+      addArticle(toDocArticle(article));
       toast.success(`${article.articleTitle} を追加しました`);
     },
-    [addArticle, currentLawId, selectedLaw, lawTitle, lawNum]
+    [addArticle, toDocArticle]
+  );
+
+  /** 章・節内の全条文を再帰的に収集 */
+  const collectAllArticles = useCallback((struct: LawStructure): ParsedArticle[] => {
+    const result: ParsedArticle[] = [...struct.articles];
+    for (const child of struct.children) {
+      result.push(...collectAllArticles(child));
+    }
+    return result;
+  }, []);
+
+  /** 章単位の一括追加 */
+  const handleBulkAddSection = useCallback(
+    (struct: LawStructure) => {
+      const allSectionArticles = collectAllArticles(struct);
+      if (allSectionArticles.length === 0) {
+        toast.info("この章には条文がありません");
+        return;
+      }
+      const docArticles = allSectionArticles.map(toDocArticle);
+      addArticles(docArticles);
+      const addedCount = docArticles.filter(
+        (a) => !clippedArticles.some((c) => c.id === a.id)
+      ).length;
+      if (addedCount > 0) {
+        toast.success(`${struct.title}から${addedCount}条を追加しました`);
+      } else {
+        toast.info("全て追加済みです");
+      }
+    },
+    [collectAllArticles, toDocArticle, addArticles, clippedArticles]
   );
 
   const isArticleClipped = useCallback(
     (article: ParsedArticle) => {
-      const id = `${currentLawId || selectedLaw?.law_info.law_id}-${article.articleNum}`;
+      const id = makeLawId(article.articleNum);
       return clippedArticles.some((a) => a.id === id);
     },
-    [clippedArticles, currentLawId, selectedLaw]
+    [clippedArticles, makeLawId]
+  );
+
+  /** セクション内の追加済み条文数を計算 */
+  const countClippedInSection = useCallback(
+    (struct: LawStructure): number => {
+      let count = struct.articles.filter(isArticleClipped).length;
+      for (const child of struct.children) {
+        count += countClippedInSection(child);
+      }
+      return count;
+    },
+    [isArticleClipped]
+  );
+
+  /** セクション内の全条文数を計算 */
+  const countTotalInSection = useCallback(
+    (struct: LawStructure): number => {
+      let count = struct.articles.length;
+      for (const child of struct.children) {
+        count += countTotalInSection(child);
+      }
+      return count;
+    },
+    []
   );
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, article: ParsedArticle) => {
-      const docArticle: DocumentArticle = {
-        id: `${currentLawId || selectedLaw?.law_info.law_id}-${article.articleNum}`,
-        lawTitle: lawTitle,
-        lawNum: lawNum,
-        articleTitle: article.articleTitle,
-        articleCaption: article.articleCaption,
-        paragraphs: article.paragraphs,
-      };
+      const docArticle = toDocArticle(article);
       e.dataTransfer.setData("application/json", JSON.stringify(docArticle));
       e.dataTransfer.effectAllowed = "copy";
     },
-    [currentLawId, selectedLaw, lawTitle, lawNum]
+    [toDocArticle]
   );
 
   const matchesFilter = useCallback((article: ParsedArticle) => {
@@ -256,7 +309,6 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     }
   }, [onDownloadFullLaw, lawTitle, lawNum, allArticles, lawFullTextData]);
 
-  // Toggle favorite for current law
   const handleToggleFavorite = useCallback(() => {
     if (!currentLawId) return;
     if (isFavorite(currentLawId)) {
@@ -267,6 +319,10 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
       toast.success("お気に入りに追加しました");
     }
   }, [currentLawId, isFavorite, removeFavorite, addFavorite, lawTitle, lawNum]);
+
+  // ============================
+  // Render helpers
+  // ============================
 
   const renderArticleCard = (article: ParsedArticle, index: number) => {
     const clipped = isArticleClipped(article);
@@ -330,32 +386,65 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     const sectionKey = `${parentKey}/${struct.tag}-${struct.num}-${struct.title}`;
     const isExpanded = articleFilter.trim() ? true : expandedSections.has(sectionKey);
     const hasContent = struct.articles.length > 0 || struct.children.length > 0;
+    const totalInSection = countTotalInSection(struct);
+    const clippedInSection = countClippedInSection(struct);
+    const allClipped = totalInSection > 0 && clippedInSection === totalInSection;
 
     return (
       <div key={sectionKey} className="mb-0.5">
-        <button
-          onClick={() => toggleSection(sectionKey)}
-          className={`w-full flex items-center gap-1.5 py-2 px-3 rounded-lg text-left hover:bg-slate-50 transition-colors ${
-            depth === 0 ? "font-semibold text-sm" : "text-xs font-medium"
+        <div
+          className={`group/section flex items-center gap-1 rounded-lg hover:bg-slate-50 transition-colors ${
+            depth === 0 ? "" : ""
           }`}
-          style={{ paddingLeft: `${depth * 12 + 12}px` }}
+          style={{ paddingLeft: `${depth * 12 + 4}px` }}
         >
-          {hasContent ? (
-            isExpanded ? (
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          {/* Expand/collapse button */}
+          <button
+            onClick={() => toggleSection(sectionKey)}
+            className={`flex items-center gap-1.5 py-2 px-2 text-left flex-1 min-w-0 ${
+              depth === 0 ? "font-semibold text-sm" : "text-xs font-medium"
+            }`}
+          >
+            {hasContent ? (
+              isExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              )
             ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            )
-          ) : (
-            <span className="w-3.5" />
-          )}
-          <span className="text-slate-700 truncate">{struct.title}</span>
-          {struct.articles.length > 0 && (
-            <span className="ml-auto text-[10px] text-slate-400 shrink-0">
-              {struct.articles.length}条
-            </span>
-          )}
-        </button>
+              <span className="w-3.5 shrink-0" />
+            )}
+            <span className="text-slate-700 truncate">{struct.title}</span>
+          </button>
+
+          {/* Article count + bulk add button */}
+          <div className="flex items-center gap-1 pr-2 shrink-0">
+            {clippedInSection > 0 && (
+              <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary font-bold">
+                {clippedInSection}/{totalInSection}
+              </span>
+            )}
+            {totalInSection > 0 && !allClipped && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBulkAddSection(struct);
+                }}
+                className="opacity-0 group-hover/section:opacity-100 transition-opacity text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 font-bold flex items-center gap-0.5"
+                title={`${struct.title}の全${totalInSection}条を追加`}
+              >
+                <PlusSquare className="w-3 h-3" />
+                全追加
+              </button>
+            )}
+            {totalInSection > 0 && !clippedInSection && (
+              <span className="text-[10px] text-slate-400 opacity-100 group-hover/section:opacity-0 transition-opacity">
+                {totalInSection}条
+              </span>
+            )}
+          </div>
+        </div>
+
         <AnimatePresence>
           {isExpanded && hasContent && (
             <motion.div
@@ -379,7 +468,6 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     );
   };
 
-  // Format relative time
   const formatRelativeTime = (timestamp: number) => {
     const diff = Date.now() - timestamp;
     const minutes = Math.floor(diff / 60000);
@@ -391,6 +479,10 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     if (days < 7) return `${days}日前`;
     return new Date(timestamp).toLocaleDateString("ja-JP", { month: "short", day: "numeric" });
   };
+
+  // ============================
+  // Main render
+  // ============================
 
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
@@ -443,7 +535,6 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
                 <h3 className="text-sm font-bold text-ink font-[var(--font-serif)] leading-tight flex-1">
                   {lawTitle}
                 </h3>
-                {/* Favorite toggle */}
                 <button
                   onClick={handleToggleFavorite}
                   className={`shrink-0 p-1 rounded transition-all ${
@@ -542,7 +633,6 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
 
               {!isSearching && !hasSearched && (
                 <>
-                  {/* Quick access: Favorites & History */}
                   <div className="mb-4">
                     <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                       クイックアクセス
@@ -575,7 +665,6 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
                     </button>
                   </div>
 
-                  {/* Suggested laws */}
                   <div>
                     <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                       よく使われる法令
@@ -763,7 +852,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
               {!isLoadingLaw && filteredStructures.length > 0 && (
                 <div>
                   <p className="text-[10px] text-slate-400 mb-2 px-3">
-                    条文をドラッグして右のペーパーにドロップ、または「追加」ボタンをクリック
+                    条文をドラッグまたは「追加」ボタンでペーパーに追加。章名の「全追加」で一括追加。
                   </p>
                   {filteredStructures.map((struct, idx) => renderStructure(struct, 0, `root-${idx}`))}
                 </div>

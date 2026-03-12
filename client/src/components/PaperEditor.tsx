@@ -1,9 +1,8 @@
 /**
  * PaperEditor - 中央のペーパーエディタ
- * Design: エディトリアル × ワークスペース — 参考デザインに準拠
+ * Design: エディトリアル × ワークスペース
  * A4用紙を模したキャンバスに条文をドラッグ＆ドロップで配置
- * フローティングツールバー付き
- * 改善: 複数形式ダウンロード対応
+ * 改善: DnD並べ替えの視認性向上、削除UI強化、ドラッグ中のビジュアルフィードバック
  */
 
 import { useState, useCallback, useRef } from "react";
@@ -14,7 +13,9 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  DragOverlay,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -54,12 +55,76 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
+// ============================
+// Article content renderer (shared between sortable and overlay)
+// ============================
+function ArticleContent({
+  article,
+  isOverlay = false,
+}: {
+  article: DocumentArticle;
+  isOverlay?: boolean;
+}) {
+  return (
+    <div
+      className={`py-3 transition-all ${
+        isOverlay ? "" : "border-l-2 border-transparent hover:border-primary/40"
+      } pl-4`}
+    >
+      {/* Law reference tag */}
+      <div className="flex items-baseline gap-2 mb-1.5">
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-vermillion/8 text-vermillion font-semibold font-[var(--font-ui)]">
+          {article.lawTitle}
+        </span>
+      </div>
+
+      {/* Article caption */}
+      {article.articleCaption && (
+        <p className="text-xs font-semibold text-ink/60 mb-0.5 font-[var(--font-sans)]">
+          {article.articleCaption}
+        </p>
+      )}
+
+      {/* Article title */}
+      <h4 className="text-lg font-bold text-ink mb-3 font-[var(--font-serif)]">
+        {article.articleTitle}
+      </h4>
+
+      {/* Paragraphs */}
+      {article.paragraphs.map((para, pi) => (
+        <div key={pi} className="mb-2">
+          <p className="text-[13.5px] leading-[2] text-ink/85 text-justify font-[var(--font-serif)]">
+            {para.paragraphNum && (
+              <span className="font-semibold mr-1">{para.paragraphNum}</span>
+            )}
+            {para.sentences.join("")}
+          </p>
+          {para.items.map((item, ii) => (
+            <p
+              key={ii}
+              className="text-[13.5px] leading-[2] text-ink/85 pl-6 text-justify font-[var(--font-serif)]"
+            >
+              <span className="font-semibold mr-1">{item.title}</span>
+              {item.sentences.join("")}
+            </p>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================
+// Sortable Article Card
+// ============================
 function SortableArticle({
   article,
   onRemove,
+  isDragActive,
 }: {
   article: DocumentArticle;
   onRemove: (id: string) => void;
+  isDragActive: boolean;
 }) {
   const {
     attributes,
@@ -73,8 +138,6 @@ function SortableArticle({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 10 : 0,
   };
 
   return (
@@ -82,76 +145,73 @@ function SortableArticle({
       ref={setNodeRef}
       style={style}
       initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
+      animate={{ opacity: isDragging ? 0.3 : 1, y: 0 }}
       exit={{ opacity: 0, x: -20, height: 0, marginBottom: 0 }}
       transition={{ duration: 0.25 }}
-      className={`group relative mb-8 ${isDragging ? "drag-ghost" : ""}`}
+      className={`group relative mb-4 rounded-lg transition-all ${
+        isDragging
+          ? "bg-primary/5 border-2 border-dashed border-primary/30"
+          : "border border-transparent hover:border-slate-200 hover:bg-slate-50/50"
+      }`}
     >
-      {/* Drag handle + Remove - visible on hover, positioned to the left */}
-      <div className="absolute -left-12 top-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Top bar with drag handle and delete - always visible */}
+      <div
+        className={`flex items-center justify-between px-3 py-1.5 rounded-t-lg transition-all ${
+          isDragging ? "opacity-30" : ""
+        }`}
+      >
+        {/* Left: drag handle */}
         <button
           {...attributes}
           {...listeners}
-          className="p-1 rounded hover:bg-slate-100 text-muted-foreground hover:text-primary transition-colors cursor-grab active:cursor-grabbing"
+          className="flex items-center gap-1.5 text-slate-400 hover:text-primary transition-colors cursor-grab active:cursor-grabbing py-0.5 px-1 -ml-1 rounded hover:bg-primary/5"
           title="ドラッグして並べ替え"
         >
           <GripVertical className="w-4 h-4" />
+          <span className="text-[10px] font-medium select-none">
+            並べ替え
+          </span>
         </button>
+
+        {/* Right: delete button */}
         <button
           onClick={() => onRemove(article.id)}
-          className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-colors"
-          title="削除"
+          className="flex items-center gap-1 text-slate-400 hover:text-red-500 transition-colors py-0.5 px-1.5 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100"
+          title="この条文を削除"
         >
-          <X className="w-4 h-4" />
+          <X className="w-3.5 h-3.5" />
+          <span className="text-[10px] font-medium">削除</span>
         </button>
       </div>
 
-      {/* Article content - left border accent on hover */}
-      <div className="border-l-2 border-transparent hover:border-primary/40 pl-4 -ml-4 py-2 transition-all">
-        {/* Law reference tag */}
-        <div className="flex items-baseline gap-2 mb-1.5">
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-vermillion/8 text-vermillion font-semibold font-[var(--font-ui)]">
-            {article.lawTitle}
-          </span>
-        </div>
-
-        {/* Article caption */}
-        {article.articleCaption && (
-          <p className="text-xs font-semibold text-ink/60 mb-0.5 font-[var(--font-sans)]">
-            {article.articleCaption}
-          </p>
-        )}
-
-        {/* Article title */}
-        <h4 className="text-lg font-bold text-ink mb-3 font-[var(--font-serif)]">
-          {article.articleTitle}
-        </h4>
-
-        {/* Paragraphs */}
-        {article.paragraphs.map((para, pi) => (
-          <div key={pi} className="mb-2">
-            <p className="text-[13.5px] leading-[2] text-ink/85 text-justify font-[var(--font-serif)]">
-              {para.paragraphNum && (
-                <span className="font-semibold mr-1">{para.paragraphNum}</span>
-              )}
-              {para.sentences.join("")}
-            </p>
-            {para.items.map((item, ii) => (
-              <p
-                key={ii}
-                className="text-[13.5px] leading-[2] text-ink/85 pl-6 text-justify font-[var(--font-serif)]"
-              >
-                <span className="font-semibold mr-1">{item.title}</span>
-                {item.sentences.join("")}
-              </p>
-            ))}
-          </div>
-        ))}
-      </div>
+      {/* Article content */}
+      {!isDragging && <ArticleContent article={article} />}
     </motion.div>
   );
 }
 
+// ============================
+// Drag Overlay (floating card while dragging)
+// ============================
+function DragOverlayContent({ article }: { article: DocumentArticle }) {
+  return (
+    <div className="bg-white rounded-lg shadow-2xl border border-primary/20 max-w-[700px] overflow-hidden rotate-1">
+      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 border-b border-primary/10">
+        <GripVertical className="w-4 h-4 text-primary" />
+        <span className="text-[10px] font-semibold text-primary">
+          移動中...
+        </span>
+      </div>
+      <div className="px-4">
+        <ArticleContent article={article} isOverlay />
+      </div>
+    </div>
+  );
+}
+
+// ============================
+// Main PaperEditor
+// ============================
 export default function PaperEditor() {
   const {
     clippedArticles,
@@ -165,24 +225,41 @@ export default function PaperEditor() {
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const paperRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
   );
+
+  const activeArticle = activeId
+    ? clippedArticles.find((a) => a.id === activeId)
+    : null;
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  }, []);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
+      setActiveId(null);
       if (over && active.id !== over.id) {
         const oldIndex = clippedArticles.findIndex((a) => a.id === active.id);
         const newIndex = clippedArticles.findIndex((a) => a.id === over.id);
         reorderArticles(oldIndex, newIndex);
+        toast.success("条文の順序を変更しました");
       }
     },
     [clippedArticles, reorderArticles]
   );
+
+  const handleDragCancel = useCallback(() => {
+    setActiveId(null);
+  }, []);
 
   // Handle external drag (from LawSearch sidebar)
   const handleExternalDragOver = useCallback((e: React.DragEvent) => {
@@ -191,20 +268,23 @@ export default function PaperEditor() {
     setIsDragOver(true);
   }, []);
 
-  const handleExternalDragLeave = useCallback((e: React.DragEvent) => {
-    const rect = paperRef.current?.getBoundingClientRect();
-    if (rect) {
-      const { clientX, clientY } = e;
-      if (
-        clientX < rect.left ||
-        clientX > rect.right ||
-        clientY < rect.top ||
-        clientY > rect.bottom
-      ) {
-        setIsDragOver(false);
+  const handleExternalDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      const rect = paperRef.current?.getBoundingClientRect();
+      if (rect) {
+        const { clientX, clientY } = e;
+        if (
+          clientX < rect.left ||
+          clientX > rect.right ||
+          clientY < rect.top ||
+          clientY > rect.bottom
+        ) {
+          setIsDragOver(false);
+        }
       }
-    }
-  }, []);
+    },
+    []
+  );
 
   const handleExternalDrop = useCallback(
     (e: React.DragEvent) => {
@@ -224,31 +304,34 @@ export default function PaperEditor() {
     [addArticle]
   );
 
-  const handleDownload = useCallback(async (format: "docx" | "txt" | "md") => {
-    if (clippedArticles.length === 0) return;
-    setIsGenerating(true);
-    try {
-      switch (format) {
-        case "docx":
-          await generateDocx(clippedArticles, documentTitle);
-          toast.success("Wordファイルをダウンロードしました");
-          break;
-        case "txt":
-          generateTxt(clippedArticles, documentTitle);
-          toast.success("テキストファイルをダウンロードしました");
-          break;
-        case "md":
-          generateMarkdown(clippedArticles, documentTitle);
-          toast.success("Markdownファイルをダウンロードしました");
-          break;
+  const handleDownload = useCallback(
+    async (format: "docx" | "txt" | "md") => {
+      if (clippedArticles.length === 0) return;
+      setIsGenerating(true);
+      try {
+        switch (format) {
+          case "docx":
+            await generateDocx(clippedArticles, documentTitle);
+            toast.success("Wordファイルをダウンロードしました");
+            break;
+          case "txt":
+            generateTxt(clippedArticles, documentTitle);
+            toast.success("テキストファイルをダウンロードしました");
+            break;
+          case "md":
+            generateMarkdown(clippedArticles, documentTitle);
+            toast.success("Markdownファイルをダウンロードしました");
+            break;
+        }
+      } catch (err) {
+        console.error("ファイル生成エラー:", err);
+        toast.error("ファイル生成に失敗しました");
+      } finally {
+        setIsGenerating(false);
       }
-    } catch (err) {
-      console.error("ファイル生成エラー:", err);
-      toast.error("ファイル生成に失敗しました");
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [clippedArticles, documentTitle]);
+    },
+    [clippedArticles, documentTitle]
+  );
 
   return (
     <div className="h-full flex flex-col relative">
@@ -293,15 +376,24 @@ export default function PaperEditor() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onClick={() => handleDownload("docx")} className="gap-2 text-xs">
+              <DropdownMenuItem
+                onClick={() => handleDownload("docx")}
+                className="gap-2 text-xs"
+              >
                 <FileDown className="w-3.5 h-3.5" />
                 Word (.docx)
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleDownload("txt")} className="gap-2 text-xs">
+              <DropdownMenuItem
+                onClick={() => handleDownload("txt")}
+                className="gap-2 text-xs"
+              >
                 <FileDown className="w-3.5 h-3.5" />
                 テキスト (.txt)
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleDownload("md")} className="gap-2 text-xs">
+              <DropdownMenuItem
+                onClick={() => handleDownload("md")}
+                className="gap-2 text-xs"
+              >
                 <FileDown className="w-3.5 h-3.5" />
                 Markdown (.md)
               </DropdownMenuItem>
@@ -325,7 +417,7 @@ export default function PaperEditor() {
               ? "ring-2 ring-primary/30 ring-offset-4 ring-offset-[#f6f6f8]"
               : ""
           }`}
-          style={{ padding: "64px" }}
+          style={{ padding: "64px 56px" }}
         >
           {/* Drop overlay hint */}
           {isDragOver && (
@@ -342,7 +434,7 @@ export default function PaperEditor() {
           )}
 
           {/* Document title on paper */}
-          <div className="mb-12">
+          <div className="mb-10">
             <input
               value={documentTitle}
               onChange={(e) => setDocumentTitle(e.target.value)}
@@ -354,45 +446,56 @@ export default function PaperEditor() {
                 year: "numeric",
                 month: "long",
                 day: "numeric",
-              })} 作成
+              })}{" "}
+              作成
             </p>
           </div>
 
-          {/* Articles with sortable */}
-          <div className="pl-12">
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
+          {/* Articles with sortable DnD */}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <SortableContext
+              items={clippedArticles.map((a) => a.id)}
+              strategy={verticalListSortingStrategy}
             >
-              <SortableContext
-                items={clippedArticles.map((a) => a.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                <AnimatePresence>
-                  {clippedArticles.map((article) => (
-                    <SortableArticle
-                      key={article.id}
-                      article={article}
-                      onRemove={removeArticle}
-                    />
-                  ))}
-                </AnimatePresence>
-              </SortableContext>
-            </DndContext>
+              <AnimatePresence>
+                {clippedArticles.map((article) => (
+                  <SortableArticle
+                    key={article.id}
+                    article={article}
+                    onRemove={removeArticle}
+                    isDragActive={!!activeId}
+                  />
+                ))}
+              </AnimatePresence>
+            </SortableContext>
 
-            {/* Drop zone at bottom when has articles */}
-            {clippedArticles.length > 0 && (
-              <div className="border-2 border-dashed border-slate-200 rounded-lg p-8 flex flex-col items-center justify-center text-slate-400 gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all group mt-4">
-                <PlusCircle className="w-8 h-8 group-hover:scale-110 transition-transform" />
-                <span className="text-sm font-medium">ライブラリから条文をここにドラッグ</span>
-              </div>
-            )}
-          </div>
+            {/* DragOverlay - the floating card that follows the cursor */}
+            <DragOverlay dropAnimation={null}>
+              {activeArticle ? (
+                <DragOverlayContent article={activeArticle} />
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+
+          {/* Drop zone at bottom when has articles */}
+          {clippedArticles.length > 0 && (
+            <div className="border-2 border-dashed border-slate-200 rounded-lg p-6 flex flex-col items-center justify-center text-slate-400 gap-2 hover:border-primary/40 hover:bg-primary/5 transition-all group mt-6">
+              <PlusCircle className="w-6 h-6 group-hover:scale-110 transition-transform" />
+              <span className="text-xs font-medium">
+                ライブラリから条文をここにドラッグ
+              </span>
+            </div>
+          )}
 
           {/* Empty state */}
           {clippedArticles.length === 0 && !isDragOver && (
-            <div className="flex flex-col items-center justify-center py-24 pl-12">
+            <div className="flex flex-col items-center justify-center py-24">
               <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
                 <FileText className="w-7 h-7 text-muted-foreground/40" />
               </div>
@@ -410,36 +513,57 @@ export default function PaperEditor() {
       {/* Floating bottom toolbar */}
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-white border border-border rounded-full shadow-xl px-6 py-2.5 flex items-center gap-5 z-10 pointer-events-auto">
         <div className="flex items-center gap-3 border-r border-border pr-5">
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="元に戻す"
-            onClick={() => toast.info("元に戻す機能は準備中です")}>
+          <button
+            className="text-muted-foreground hover:text-primary transition-colors"
+            title="元に戻す"
+            onClick={() => toast.info("元に戻す機能は準備中です")}
+          >
             <Undo2 className="w-4 h-4" />
           </button>
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="やり直し"
-            onClick={() => toast.info("やり直し機能は準備中です")}>
+          <button
+            className="text-muted-foreground hover:text-primary transition-colors"
+            title="やり直し"
+            onClick={() => toast.info("やり直し機能は準備中です")}
+          >
             <Redo2 className="w-4 h-4" />
           </button>
         </div>
         <div className="flex items-center gap-3 border-r border-border pr-5">
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="太字"
-            onClick={() => toast.info("太字機能は準備中です")}>
+          <button
+            className="text-muted-foreground hover:text-primary transition-colors"
+            title="太字"
+            onClick={() => toast.info("太字機能は準備中です")}
+          >
             <Bold className="w-4 h-4" />
           </button>
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="リスト"
-            onClick={() => toast.info("リスト機能は準備中です")}>
+          <button
+            className="text-muted-foreground hover:text-primary transition-colors"
+            title="リスト"
+            onClick={() => toast.info("リスト機能は準備中です")}
+          >
             <List className="w-4 h-4" />
           </button>
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="両端揃え"
-            onClick={() => toast.info("両端揃え機能は準備中です")}>
+          <button
+            className="text-muted-foreground hover:text-primary transition-colors"
+            title="両端揃え"
+            onClick={() => toast.info("両端揃え機能は準備中です")}
+          >
             <AlignJustify className="w-4 h-4" />
           </button>
         </div>
         <div className="flex items-center gap-3">
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="コメント"
-            onClick={() => toast.info("コメント機能は準備中です")}>
+          <button
+            className="text-muted-foreground hover:text-primary transition-colors"
+            title="コメント"
+            onClick={() => toast.info("コメント機能は準備中です")}
+          >
             <MessageSquare className="w-4 h-4" />
           </button>
-          <button className="text-muted-foreground hover:text-primary transition-colors" title="共有"
-            onClick={() => toast.info("共有機能は準備中です")}>
+          <button
+            className="text-muted-foreground hover:text-primary transition-colors"
+            title="共有"
+            onClick={() => toast.info("共有機能は準備中です")}
+          >
             <Share2 className="w-4 h-4" />
           </button>
         </div>

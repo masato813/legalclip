@@ -88,10 +88,10 @@ export function generateTxt(articles: DocumentArticle[], documentTitle?: string)
 
   const content = sections.join("\n");
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const filename = documentTitle
-    ? `${documentTitle}.txt`
-    : `条文抜粋_${new Date().toISOString().slice(0, 10)}.txt`;
-  saveAs(blob, filename);
+  const today = new Date().toISOString().slice(0, 10);
+  const lawNames = Array.from(new Set(articles.map((a) => a.lawTitle))).join("・");
+  const baseName = lawNames ? `${lawNames}_${today}` : `条文抜粋_${today}`;
+  saveAs(blob, `${baseName}.txt`);
 }
 
 // ============================
@@ -150,10 +150,10 @@ export function generateMarkdown(articles: DocumentArticle[], documentTitle?: st
 
   const content = lines.join("\n");
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-  const filename = documentTitle
-    ? `${documentTitle}.md`
-    : `条文抜粋_${new Date().toISOString().slice(0, 10)}.md`;
-  saveAs(blob, filename);
+  const today = new Date().toISOString().slice(0, 10);
+  const lawNames = Array.from(new Set(articles.map((a) => a.lawTitle))).join("・");
+  const baseName = lawNames ? `${lawNames}_${today}` : `条文抜粋_${today}`;
+  saveAs(blob, `${baseName}.md`);
 }
 
 // ============================

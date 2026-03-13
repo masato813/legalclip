@@ -219,8 +219,8 @@ export async function generateDocx(
   });
 
   const blob = await Packer.toBlob(doc);
-  const filename = documentTitle
-    ? `${documentTitle}.docx`
-    : `条文抜粋_${new Date().toISOString().slice(0, 10)}.docx`;
-  saveAs(blob, filename);
+  const today = new Date().toISOString().slice(0, 10);
+  const lawNames = Array.from(new Set(articles.map((a) => a.lawTitle))).join("・");
+  const baseName = lawNames ? `${lawNames}_${today}` : `条文抜粋_${today}`;
+  saveAs(blob, `${baseName}.docx`);
 }

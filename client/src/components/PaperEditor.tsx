@@ -5,7 +5,7 @@
  * 改善: 削除ボタン常時表示（赤ゴミ箱）、Undo/Redo機能、Ctrl+Z/Y対応
  */
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   DndContext,
   closestCenter,
@@ -143,6 +143,7 @@ function SortableArticle({
     <motion.div
       ref={setNodeRef}
       style={style}
+      data-article-id={article.id}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: isDragging ? 0.3 : 1, y: 0 }}
       exit={{ opacity: 0, x: -20, height: 0, marginBottom: 0 }}
@@ -212,6 +213,7 @@ export default function PaperEditor() {
     reorderArticles,
     clearArticles,
     addArticle,
+    insertArticleAt,
     documentTitle,
     setDocumentTitle,
     undo,
@@ -227,7 +229,21 @@ export default function PaperEditor() {
   const [dragPreview, setDragPreview] = useState<DocumentArticle | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [dropInsertIndex, setDropInsertIndex] = useState<number | null>(null);
   const paperRef = useRef<HTMLDivElement>(null);
+  const articleRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+  // ドロップ位置からインデックスを計算
+  const getDropIndex = useCallback((clientY: number): number => {
+    const articleEls = paperRef.current?.querySelectorAll('[data-article-id]');
+    if (!articleEls || articleEls.length === 0) return clippedArticles.length;
+    for (let i = 0; i < articleEls.length; i++) {
+      const rect = articleEls[i].getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (clientY < midY) return i;
+    }
+    return articleEls.length;
+  }, [clippedArticles.length]);
 
   // Keyboard shortcuts: Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z
   useEffect(() => {
@@ -284,17 +300,10 @@ export default function PaperEditor() {
   const handleExternalDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
-    if (!isDragOver) {
-      setIsDragOver(true);
-      // Try to parse the drag data for preview
-      try {
-        const types = e.dataTransfer.types;
-        if (types.includes("application/json") && !dragPreview) {
-          // We can't read data during dragover, but we set the flag
-        }
-      } catch {}
-    }
-  }, [isDragOver, dragPreview]);
+    setIsDragOver(true);
+    const idx = getDropIndex(e.clientY);
+    setDropInsertIndex(idx);
+  }, [getDropIndex]);
 
   const handleExternalDragLeave = useCallback((e: React.DragEvent) => {
     const rect = paperRef.current?.getBoundingClientRect();
@@ -302,6 +311,7 @@ export default function PaperEditor() {
       const { clientX, clientY } = e;
       if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
         setIsDragOver(false);
+        setDropInsertIndex(null);
       }
     }
   }, []);
@@ -309,20 +319,22 @@ export default function PaperEditor() {
   const handleExternalDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
+      const insertIdx = getDropIndex(e.clientY);
       setIsDragOver(false);
+      setDropInsertIndex(null);
       setDragPreview(null);
       try {
         const data = e.dataTransfer.getData("application/json");
         if (data) {
           const article: DocumentArticle = JSON.parse(data);
-          addArticle(article);
+          insertArticleAt(article, insertIdx);
           toast.success(`${article.articleTitle} を追加しました`);
         }
       } catch (err) {
         console.error("ドロップエラー:", err);
       }
     },
-    [addArticle]
+    [insertArticleAt, getDropIndex]
   );
 
   const handleDownload = useCallback(
@@ -470,9 +482,39 @@ export default function PaperEditor() {
           >
             <SortableContext items={clippedArticles.map((a) => a.id)} strategy={verticalListSortingStrategy}>
               <AnimatePresence>
-                {clippedArticles.map((article) => (
-                  <SortableArticle key={article.id} article={article} onRemove={removeArticle} searchQuery={searchQuery} />
+                {clippedArticles.map((article, idx) => (
+                  <React.Fragment key={`frag-${article.id}`}>
+                    {/* ドロップインジケーター: 各条文の前 */}
+                    {isDragOver && dropInsertIndex === idx && (
+                      <motion.div
+                        key={`indicator-${idx}`}
+                        initial={{ opacity: 0, scaleX: 0.8 }}
+                        animate={{ opacity: 1, scaleX: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="flex items-center gap-2 my-1 pointer-events-none"
+                      >
+                        <div className="h-0.5 flex-1 bg-primary rounded-full" />
+                        <div className="text-[10px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full whitespace-nowrap">ここに挿入</div>
+                        <div className="h-0.5 flex-1 bg-primary rounded-full" />
+                      </motion.div>
+                    )}
+                    <SortableArticle key={article.id} article={article} onRemove={removeArticle} searchQuery={searchQuery} />
+                  </React.Fragment>
                 ))}
+                {/* 最後の条文の後のインジケーター */}
+                {isDragOver && dropInsertIndex === clippedArticles.length && (
+                  <motion.div
+                    key="indicator-last"
+                    initial={{ opacity: 0, scaleX: 0.8 }}
+                    animate={{ opacity: 1, scaleX: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center gap-2 my-1 pointer-events-none"
+                  >
+                    <div className="h-0.5 flex-1 bg-primary rounded-full" />
+                    <div className="text-[10px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full whitespace-nowrap">ここに挿入</div>
+                    <div className="h-0.5 flex-1 bg-primary rounded-full" />
+                  </motion.div>
+                )}
               </AnimatePresence>
             </SortableContext>
 

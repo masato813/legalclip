@@ -15,6 +15,8 @@ interface HistoryEntry {
 interface DocumentContextType {
   clippedArticles: DocumentArticle[];
   addArticle: (article: DocumentArticle) => void;
+  /** 指定インデックスに条文を挿入 */
+  insertArticleAt: (article: DocumentArticle, index: number) => void;
   /** 複数条文を一括追加 */
   addArticles: (articles: DocumentArticle[]) => void;
   removeArticle: (id: string) => void;
@@ -55,6 +57,20 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
       setUndoCount(undoStack.current.length);
       setRedoCount(0);
       return [...prev, article];
+    });
+  }, []);
+
+  const insertArticleAt = useCallback((article: DocumentArticle, index: number) => {
+    setClippedArticles((prev) => {
+      if (prev.some((a) => a.id === article.id)) return prev;
+      undoStack.current.push({ articles: [...prev], label: `${article.articleTitle}を追加` });
+      if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
+      redoStack.current = [];
+      setUndoCount(undoStack.current.length);
+      setRedoCount(0);
+      const items = [...prev];
+      items.splice(index, 0, article);
+      return items;
     });
   }, []);
 
@@ -143,6 +159,7 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
       value={{
         clippedArticles,
         addArticle,
+        insertArticleAt,
         addArticles,
         removeArticle,
         reorderArticles,

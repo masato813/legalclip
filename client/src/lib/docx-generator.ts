@@ -1,6 +1,7 @@
 /**
  * Word (docx) ファイル生成ユーティリティ
  * docx ライブラリを使用して条文抜粋をWordファイルに変換
+ * アノテーション（ハイライト・アンダーライン）対応
  */
 
 import {
@@ -13,8 +14,10 @@ import {
   SectionType,
   convertMillimetersToTwip,
   BorderStyle,
+  type IRunOptions,
 } from "docx";
 import { saveAs } from "file-saver";
+import type { TextAnnotation } from "@/contexts/DocumentContext";
 
 export interface DocumentArticle {
   id: string;
@@ -30,6 +33,69 @@ export interface DocumentArticle {
       sentences: string[];
     }[];
   }[];
+  annotations?: TextAnnotation[];
+}
+
+// ============================
+// Annotation-aware text renderer
+// ============================
+
+const HIGHLIGHT_MAP: Record<string, string> = {
+  yellow: "yellow",
+  green:  "green",
+  pink:   "magenta",
+  blue:   "cyan",
+};
+
+/**
+ * テキストをアノテーションに基づいて TextRun[] に分割する
+ */
+function buildAnnotatedRuns(
+  text: string,
+  annotations: TextAnnotation[],
+  baseOptions: IRunOptions = {}
+): TextRun[] {
+  if (!annotations || annotations.length === 0) {
+    return [new TextRun({ ...baseOptions, text })];
+  }
+
+  // Build segments: [{text, highlight?, underline?}]
+  type Seg = { text: string; highlight?: string; underline?: boolean };
+  let segments: Seg[] = [{ text }];
+
+  for (const ann of annotations) {
+    if (!ann.text) continue;
+    const escaped = ann.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(${escaped})`, "g");
+    const next: Seg[] = [];
+    for (const seg of segments) {
+      if (seg.highlight || seg.underline) { next.push(seg); continue; }
+      const parts = seg.text.split(regex);
+      for (const part of parts) {
+        if (!part) continue;
+        if (part === ann.text) {
+          next.push({
+            text: part,
+            highlight: ann.type === "highlight" ? (ann.color ?? "yellow") : undefined,
+            underline: ann.type === "underline" ? true : undefined,
+          });
+        } else {
+          next.push({ text: part });
+        }
+      }
+    }
+    segments = next;
+  }
+
+  return segments.map((seg) => {
+    const opts: IRunOptions = {
+      ...baseOptions,
+      text: seg.text,
+      ...(seg.highlight ? { highlight: (HIGHLIGHT_MAP[seg.highlight] ?? "yellow") as "yellow" | "green" | "magenta" | "cyan" } : {}),
+      ...(seg.underline ? { underline: {} } : {}),
+    };
+    return new TextRun(opts);
+  });
 }
 
 export async function generateDocx(
@@ -118,7 +184,10 @@ export async function generateDocx(
     }
 
     for (const article of lawArticles) {
-      // Article caption (e.g., （目的）)
+      const anns = article.annotations ?? [];
+      const baseRun: IRunOptions = { size: 22, font: "游明朝" };
+
+      // Article caption
       if (article.articleCaption) {
         children.push(
           new Paragraph({
@@ -135,7 +204,7 @@ export async function generateDocx(
         );
       }
 
-      // Article title (e.g., 第一条)
+      // Article title
       children.push(
         new Paragraph({
           spacing: { before: article.articleCaption ? 0 : 200, after: 100 },
@@ -154,34 +223,24 @@ export async function generateDocx(
       for (const para of article.paragraphs) {
         const paraText = para.sentences.join("");
         const prefix = para.paragraphNum ? `${para.paragraphNum}　` : "";
+        const fullText = prefix + paraText;
 
         children.push(
           new Paragraph({
             spacing: { after: 80 },
             indent: { firstLine: convertMillimetersToTwip(10) },
-            children: [
-              new TextRun({
-                text: prefix + paraText,
-                size: 22,
-                font: "游明朝",
-              }),
-            ],
+            children: buildAnnotatedRuns(fullText, anns, baseRun),
           })
         );
 
         // Items (号)
         for (const item of para.items) {
+          const itemText = `${item.title}　${item.sentences.join("")}`;
           children.push(
             new Paragraph({
               spacing: { after: 40 },
               indent: { left: convertMillimetersToTwip(15) },
-              children: [
-                new TextRun({
-                  text: `${item.title}　${item.sentences.join("")}`,
-                  size: 22,
-                  font: "游明朝",
-                }),
-              ],
+              children: buildAnnotatedRuns(itemText, anns, baseRun),
             })
           );
         }

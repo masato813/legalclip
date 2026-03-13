@@ -88,9 +88,10 @@ export function generateTxt(articles: DocumentArticle[], documentTitle?: string)
 
   const content = sections.join("\n");
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const today = new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
   const lawNames = Array.from(new Set(articles.map((a) => a.lawTitle))).join("・");
-  const baseName = lawNames ? `${lawNames}_${today}` : `条文抜粋_${today}`;
+  const baseName = lawNames ? `${dateStr}条文抜粋（${lawNames}）` : `${dateStr}条文抜粋`;
   saveAs(blob, `${baseName}.txt`);
 }
 
@@ -150,9 +151,10 @@ export function generateMarkdown(articles: DocumentArticle[], documentTitle?: st
 
   const content = lines.join("\n");
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-  const today = new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
   const lawNames = Array.from(new Set(articles.map((a) => a.lawTitle))).join("・");
-  const baseName = lawNames ? `${lawNames}_${today}` : `条文抜粋_${today}`;
+  const baseName = lawNames ? `${dateStr}条文抜粋（${lawNames}）` : `${dateStr}条文抜粋`;
   saveAs(blob, `${baseName}.md`);
 }
 

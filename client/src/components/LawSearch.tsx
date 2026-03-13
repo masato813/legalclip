@@ -376,7 +376,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
   }, []);
 
   const handleExpandAll = useCallback(() => {
-    const allKeys = collectAllSectionKeys(structures);
+    const allKeys = structures.flatMap((struct, idx) => collectAllSectionKeys([struct], `root-${idx}`));
     setExpandedSections(new Set(allKeys));
   }, [structures, collectAllSectionKeys]);
 
@@ -386,7 +386,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
 
   const isAllExpanded = useMemo(() => {
     if (structures.length === 0) return false;
-    const allKeys = collectAllSectionKeys(structures);
+    const allKeys = structures.flatMap((struct, idx) => collectAllSectionKeys([struct], `root-${idx}`));
     return allKeys.every((k) => expandedSections.has(k));
   }, [structures, expandedSections, collectAllSectionKeys]);
 

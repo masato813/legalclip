@@ -104,7 +104,7 @@ function ArticleContent({
       </h4>
       {article.paragraphs.map((para, pi) => (
         <div key={pi} className="mb-2">
-          <p className="text-[13.5px] leading-[2] text-ink/85 text-justify font-[var(--font-serif)] indent-[1em]">
+          <p className="text-[13.5px] leading-[2] text-ink/85 text-justify font-[var(--font-serif)]" style={{textIndent: '1em'}}>
             {para.paragraphNum && <span className="font-semibold mr-1" style={{marginLeft: '-1em'}}>{para.paragraphNum}</span>}
             <HighlightText text={para.sentences.join("")} query={searchQuery} />
           </p>

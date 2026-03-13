@@ -28,6 +28,7 @@ import {
   Check,
   CheckSquare,
   Square,
+  ChevronsUpDown,
 } from "lucide-react";
 import {
   searchLaws,
@@ -360,6 +361,34 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     if (filteredArticles.length === 0 && filteredChildren.length === 0) return null;
     return { ...struct, articles: filteredArticles, children: filteredChildren };
   }, [articleFilter, matchesFilter]);
+
+  // 全セクションキーを収集するヘルパー
+  const collectAllSectionKeys = useCallback((structs: LawStructure[], parentKey = ""): string[] => {
+    const keys: string[] = [];
+    for (const struct of structs) {
+      const key = `${parentKey}/${struct.tag}-${struct.num}-${struct.title}`;
+      keys.push(key);
+      if (struct.children.length > 0) {
+        keys.push(...collectAllSectionKeys(struct.children, key));
+      }
+    }
+    return keys;
+  }, []);
+
+  const handleExpandAll = useCallback(() => {
+    const allKeys = collectAllSectionKeys(structures);
+    setExpandedSections(new Set(allKeys));
+  }, [structures, collectAllSectionKeys]);
+
+  const handleCollapseAll = useCallback(() => {
+    setExpandedSections(new Set());
+  }, []);
+
+  const isAllExpanded = useMemo(() => {
+    if (structures.length === 0) return false;
+    const allKeys = collectAllSectionKeys(structures);
+    return allKeys.every((k) => expandedSections.has(k));
+  }, [structures, expandedSections, collectAllSectionKeys]);
 
   const filteredStructures = useMemo(() => {
     if (!articleFilter.trim()) return structures;
@@ -1068,9 +1097,21 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
 
               {!isLoadingLaw && filteredStructures.length > 0 && (
                 <div>
-                  <p className="text-[10px] text-slate-400 mb-2 px-3">
-                    条文をドラッグまたは「追加」ボタンでペーパーに追加。「項選択」で特定の項のみ追加。
-                  </p>
+                  <div className="flex items-center justify-between px-3 mb-2">
+                    <p className="text-[10px] text-slate-400">
+                      「追加」または「項選択」でペーパーに追加。
+                    </p>
+                    {!articleFilter.trim() && (
+                      <button
+                        onClick={isAllExpanded ? handleCollapseAll : handleExpandAll}
+                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 hover:bg-primary/10 hover:text-primary transition-colors font-medium shrink-0"
+                        title={isAllExpanded ? "全て折りたたむ" : "全て展開"}
+                      >
+                        <ChevronsUpDown className="w-3 h-3" />
+                        {isAllExpanded ? "全折" : "全展開"}
+                      </button>
+                    )}
+                  </div>
                   {filteredStructures.map((struct, idx) => renderStructure(struct, 0, `root-${idx}`))}
                 </div>
               )}

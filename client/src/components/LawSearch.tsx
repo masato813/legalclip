@@ -458,16 +458,16 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: Math.min(index * 0.025, 0.25) }}
-        draggable={!clipped && !isArticleExpanded}
+        draggable={!clipped}
         onDragStart={(e) => handleDragStart(e as unknown as React.DragEvent, article)}
         className={`article-card group relative rounded-md border p-2.5 mb-1.5 transition-all ${
           clipped
             ? "bg-primary/5 border-primary/20 opacity-70"
-            : "bg-white border-slate-200 hover:border-primary/30 hover:bg-primary/5 cursor-grab active:cursor-grabbing"
+            : "bg-white border-slate-200 hover:border-primary/30 hover:bg-primary/5"
         }`}
       >
-        {!clipped && !isArticleExpanded && (
-          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+        {!clipped && (
+          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
             <GripVertical className="w-3.5 h-3.5 text-primary" />
           </div>
         )}

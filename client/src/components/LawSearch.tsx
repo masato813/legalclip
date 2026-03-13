@@ -608,7 +608,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
               >
                 {struct.articles.map((article, i) => renderArticleCard(article, i))}
               </div>
-              {struct.children.map((child, idx) => renderStructure(child, depth + 1, `${sectionKey}-${idx}`))}
+              {struct.children.map((child) => renderStructure(child, depth + 1, sectionKey))}
             </motion.div>
           )}
         </AnimatePresence>

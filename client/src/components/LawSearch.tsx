@@ -1,7 +1,7 @@
 /**
  * LawSearch - 法令検索サイドバー
  * Design: エディトリアル × ワークスペース
- * 機能: お気に入り・履歴（localStorage）、条文フィルタ、章単位一括追加
+ * 機能: お気に入り・履歴（localStorage）、条文フィルタ、章単位一括追加、項単位の部分選択
  */
 
 import { useState, useCallback, useRef, useMemo } from "react";
@@ -24,6 +24,10 @@ import {
   Trash2,
   Clock,
   PlusSquare,
+  ListChecks,
+  Check,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import {
   searchLaws,
@@ -75,6 +79,10 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
   const [currentLawId, setCurrentLawId] = useState<string>("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Paragraph selection state
+  const [paragraphSelectArticle, setParagraphSelectArticle] = useState<ParsedArticle | null>(null);
+  const [selectedParagraphs, setSelectedParagraphs] = useState<Set<number>>(new Set());
 
   const { addArticle, addArticles, clippedArticles } = useDocument();
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites();
@@ -169,6 +177,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     setShowFilter(false);
     setLawFullTextData(null);
     setCurrentLawId("");
+    setParagraphSelectArticle(null);
   }, []);
 
   const toggleSection = useCallback((key: string) => {
@@ -180,18 +189,28 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     });
   }, []);
 
-  const makeLawId = useCallback((articleNum: string) => {
-    return `${currentLawId || selectedLaw?.law_info.law_id}-${articleNum}`;
+  const makeLawId = useCallback((articleNum: string, paragraphSuffix?: string) => {
+    const base = `${currentLawId || selectedLaw?.law_info.law_id}-${articleNum}`;
+    return paragraphSuffix ? `${base}-p${paragraphSuffix}` : base;
   }, [currentLawId, selectedLaw]);
 
-  const toDocArticle = useCallback((article: ParsedArticle): DocumentArticle => {
+  const toDocArticle = useCallback((article: ParsedArticle, selectedParaIndices?: Set<number>): DocumentArticle => {
+    const paragraphs = selectedParaIndices
+      ? article.paragraphs.filter((_, i) => selectedParaIndices.has(i))
+      : article.paragraphs;
+
+    // If partial selection, create a unique ID with paragraph info
+    const id = selectedParaIndices && selectedParaIndices.size < article.paragraphs.length
+      ? makeLawId(article.articleNum, Array.from(selectedParaIndices).sort().join(","))
+      : makeLawId(article.articleNum);
+
     return {
-      id: makeLawId(article.articleNum),
+      id,
       lawTitle: lawTitle,
       lawNum: lawNum,
       articleTitle: article.articleTitle,
       articleCaption: article.articleCaption,
-      paragraphs: article.paragraphs,
+      paragraphs,
     };
   }, [makeLawId, lawTitle, lawNum]);
 
@@ -202,6 +221,55 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     },
     [addArticle, toDocArticle]
   );
+
+  /** 項選択ダイアログを開く */
+  const openParagraphSelector = useCallback((article: ParsedArticle) => {
+    setParagraphSelectArticle(article);
+    // Default: all paragraphs selected
+    setSelectedParagraphs(new Set(article.paragraphs.map((_, i) => i)));
+  }, []);
+
+  /** 項選択ダイアログを閉じる */
+  const closeParagraphSelector = useCallback(() => {
+    setParagraphSelectArticle(null);
+    setSelectedParagraphs(new Set());
+  }, []);
+
+  /** 選択した項のみ追加 */
+  const handleAddSelectedParagraphs = useCallback(() => {
+    if (!paragraphSelectArticle || selectedParagraphs.size === 0) return;
+    const docArticle = toDocArticle(paragraphSelectArticle, selectedParagraphs);
+    addArticle(docArticle);
+    const count = selectedParagraphs.size;
+    const total = paragraphSelectArticle.paragraphs.length;
+    if (count === total) {
+      toast.success(`${paragraphSelectArticle.articleTitle}（全${total}項）を追加しました`);
+    } else {
+      toast.success(`${paragraphSelectArticle.articleTitle}（${count}/${total}項）を追加しました`);
+    }
+    closeParagraphSelector();
+  }, [paragraphSelectArticle, selectedParagraphs, toDocArticle, addArticle, closeParagraphSelector]);
+
+  /** 項のチェックボックスをトグル */
+  const toggleParagraph = useCallback((index: number) => {
+    setSelectedParagraphs((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }, []);
+
+  /** 全選択/全解除 */
+  const toggleAllParagraphs = useCallback(() => {
+    if (!paragraphSelectArticle) return;
+    setSelectedParagraphs((prev) => {
+      if (prev.size === paragraphSelectArticle.paragraphs.length) {
+        return new Set();
+      }
+      return new Set(paragraphSelectArticle.paragraphs.map((_, i) => i));
+    });
+  }, [paragraphSelectArticle]);
 
   /** 章・節内の全条文を再帰的に収集 */
   const collectAllArticles = useCallback((struct: LawStructure): ParsedArticle[] => {
@@ -220,7 +288,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
         toast.info("この章には条文がありません");
         return;
       }
-      const docArticles = allSectionArticles.map(toDocArticle);
+      const docArticles = allSectionArticles.map((a) => toDocArticle(a));
       addArticles(docArticles);
       const addedCount = docArticles.filter(
         (a) => !clippedArticles.some((c) => c.id === a.id)
@@ -237,7 +305,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
   const isArticleClipped = useCallback(
     (article: ParsedArticle) => {
       const id = makeLawId(article.articleNum);
-      return clippedArticles.some((a) => a.id === id);
+      return clippedArticles.some((a) => a.id === id || a.id.startsWith(id));
     },
     [clippedArticles, makeLawId]
   );
@@ -328,6 +396,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     const clipped = isArticleClipped(article);
     const firstParagraph = article.paragraphs[0];
     const previewText = firstParagraph?.sentences.join("").slice(0, 70) || "";
+    const hasParagraphs = article.paragraphs.length > 1;
 
     return (
       <motion.div
@@ -358,6 +427,11 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
             <span className="text-xs font-semibold text-ink font-[var(--font-serif)]">
               {article.articleTitle}
             </span>
+            {hasParagraphs && (
+              <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">
+                {article.paragraphs.length}項
+              </span>
+            )}
             {clipped && (
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-bold shrink-0">
                 追加済
@@ -370,13 +444,31 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
             </p>
           )}
         </div>
+
+        {/* Action buttons */}
         {!clipped && (
-          <button
-            onClick={() => handleAddArticle(article)}
-            className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] px-2 py-0.5 rounded bg-primary text-white hover:bg-primary/90 font-bold"
-          >
-            追加
-          </button>
+          <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+            {/* Paragraph selector button - only show if multiple paragraphs */}
+            {hasParagraphs && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openParagraphSelector(article);
+                }}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 hover:bg-primary/10 hover:text-primary font-bold flex items-center gap-0.5 transition-colors"
+                title="項を選択して追加"
+              >
+                <ListChecks className="w-3 h-3" />
+                項選択
+              </button>
+            )}
+            <button
+              onClick={() => handleAddArticle(article)}
+              className="text-[10px] px-2 py-0.5 rounded bg-primary text-white hover:bg-primary/90 font-bold"
+            >
+              追加
+            </button>
+          </div>
         )}
       </motion.div>
     );
@@ -393,12 +485,9 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     return (
       <div key={sectionKey} className="mb-0.5">
         <div
-          className={`group/section flex items-center gap-1 rounded-lg hover:bg-slate-50 transition-colors ${
-            depth === 0 ? "" : ""
-          }`}
+          className={`group/section flex items-center gap-1 rounded-lg hover:bg-slate-50 transition-colors`}
           style={{ paddingLeft: `${depth * 12 + 4}px` }}
         >
-          {/* Expand/collapse button */}
           <button
             onClick={() => toggleSection(sectionKey)}
             className={`flex items-center gap-1.5 py-2 px-2 text-left flex-1 min-w-0 ${
@@ -417,7 +506,6 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
             <span className="text-slate-700 truncate">{struct.title}</span>
           </button>
 
-          {/* Article count + bulk add button */}
           <div className="flex items-center gap-1 pr-2 shrink-0">
             {clippedInSection > 0 && (
               <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary font-bold">
@@ -481,11 +569,140 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
   };
 
   // ============================
+  // Paragraph selection panel
+  // ============================
+
+  const renderParagraphSelectorContent = () => {
+    if (!paragraphSelectArticle) return null;
+    const article = paragraphSelectArticle;
+    const allSelected = selectedParagraphs.size === article.paragraphs.length;
+    const noneSelected = selectedParagraphs.size === 0;
+
+    return (
+      <>
+        {/* Header */}
+        <div className="p-4 border-b border-slate-100 shrink-0">
+          <button
+            onClick={closeParagraphSelector}
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-primary transition-colors mb-3"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            条文一覧に戻る
+          </button>
+          <div>
+            {article.articleCaption && (
+              <span className="text-[10px] font-medium text-vermillion mb-0.5 block">
+                {article.articleCaption}
+              </span>
+            )}
+            <h3 className="text-sm font-bold text-ink font-[var(--font-serif)]">
+              {article.articleTitle}
+            </h3>
+            <p className="text-[10px] text-slate-500 mt-1">
+              追加する項を選択してください（全{article.paragraphs.length}項）
+            </p>
+          </div>
+
+          {/* Select all / deselect all */}
+          <div className="flex items-center justify-between mt-3">
+            <button
+              onClick={toggleAllParagraphs}
+              className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-primary transition-colors"
+            >
+              {allSelected ? (
+                <CheckSquare className="w-3.5 h-3.5 text-primary" />
+              ) : (
+                <Square className="w-3.5 h-3.5" />
+              )}
+              {allSelected ? "全解除" : "全選択"}
+            </button>
+            <span className="text-[10px] text-slate-400">
+              {selectedParagraphs.size}/{article.paragraphs.length}項 選択中
+            </span>
+          </div>
+        </div>
+
+        {/* Paragraph list */}
+        <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-1" style={{ minHeight: 0 }}>
+          {article.paragraphs.map((para, i) => {
+            const isSelected = selectedParagraphs.has(i);
+            const previewText = para.sentences.join("").slice(0, 120);
+            const paraLabel = para.paragraphNum || `第${i + 1}項`;
+
+            return (
+              <button
+                key={i}
+                onClick={() => toggleParagraph(i)}
+                className={`w-full text-left p-3 rounded-lg border transition-all ${
+                  isSelected
+                    ? "border-primary/30 bg-primary/5"
+                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <div className={`mt-0.5 shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                    isSelected
+                      ? "bg-primary border-primary"
+                      : "border-slate-300 bg-white"
+                  }`}>
+                    {isSelected && <Check className="w-3 h-3 text-white" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-xs font-semibold text-ink block mb-0.5">
+                      {paraLabel}
+                    </span>
+                    <p className="text-[11px] text-slate-500 leading-relaxed line-clamp-3">
+                      {previewText}{previewText.length >= 120 ? "..." : ""}
+                    </p>
+                    {para.items.length > 0 && (
+                      <span className="text-[9px] text-slate-400 mt-1 block">
+                        ({para.items.length}号あり)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Footer with action button */}
+        <div className="p-3 pb-5 border-t border-slate-100 shrink-0">
+          <button
+            onClick={handleAddSelectedParagraphs}
+            disabled={noneSelected}
+            className={`w-full py-2.5 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+              noneSelected
+                ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                : "bg-primary text-white hover:bg-primary/90 shadow-sm"
+            }`}
+          >
+            <ListChecks className="w-4 h-4" />
+            {noneSelected
+              ? "項を選択してください"
+              : selectedParagraphs.size === article.paragraphs.length
+                ? `全${article.paragraphs.length}項を追加`
+                : `選択した${selectedParagraphs.size}項を追加`
+            }
+          </button>
+        </div>
+      </>
+    );
+  };
+
+  // ============================
   // Main render
   // ============================
 
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
+      {/* Paragraph selection mode - replaces entire sidebar content */}
+      {paragraphSelectArticle ? (
+        <div className="h-full flex flex-col bg-white overflow-hidden">
+          {renderParagraphSelectorContent()}
+        </div>
+      ) : (
+      <>
       {/* Header */}
       <div className="p-4 border-b border-slate-100 shrink-0">
         {viewState === "search" || viewState === "favorites" || viewState === "history" ? (
@@ -852,7 +1069,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
               {!isLoadingLaw && filteredStructures.length > 0 && (
                 <div>
                   <p className="text-[10px] text-slate-400 mb-2 px-3">
-                    条文をドラッグまたは「追加」ボタンでペーパーに追加。章名の「全追加」で一括追加。
+                    条文をドラッグまたは「追加」ボタンでペーパーに追加。「項選択」で特定の項のみ追加。
                   </p>
                   {filteredStructures.map((struct, idx) => renderStructure(struct, 0, `root-${idx}`))}
                 </div>
@@ -883,6 +1100,8 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
           )}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

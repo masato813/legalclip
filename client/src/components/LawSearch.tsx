@@ -85,6 +85,9 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
   const [paragraphSelectArticle, setParagraphSelectArticle] = useState<ParsedArticle | null>(null);
   const [selectedParagraphs, setSelectedParagraphs] = useState<Set<number>>(new Set());
 
+  // Article expand state (for showing full preview text)
+  const [expandedArticles, setExpandedArticles] = useState<Set<string>>(new Set());
+
   const { addArticle, addArticles, clippedArticles } = useDocument();
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites();
   const { history, addToHistory, clearHistory } = useHistory();
@@ -127,9 +130,10 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
       setShowFilter(false);
       addToHistory(law.law_info.law_id, title, law.law_info.law_num);
       if (struct.length > 0) {
-        const firstKey = `/${struct[0].tag}-${struct[0].num}-${struct[0].title}`;
+        const firstKey = `root-0/${struct[0].tag}-${struct[0].num}-${struct[0].title}`;
         setExpandedSections(new Set([firstKey]));
       }
+      setExpandedArticles(new Set());
     } catch (err) {
       console.error("法令取得エラー:", err);
       toast.error("法令の取得に失敗しました");
@@ -157,9 +161,10 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
       setShowFilter(false);
       addToHistory(lawId, extractedTitle, num);
       if (struct.length > 0) {
-        const firstKey = `/${struct[0].tag}-${struct[0].num}-${struct[0].title}`;
+        const firstKey = `root-0/${struct[0].tag}-${struct[0].num}-${struct[0].title}`;
         setExpandedSections(new Set([firstKey]));
       }
+      setExpandedArticles(new Set());
     } catch (err) {
       console.error("法令取得エラー:", err);
       toast.error("法令の取得に失敗しました");
@@ -378,10 +383,13 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
   const handleExpandAll = useCallback(() => {
     const allKeys = structures.flatMap((struct, idx) => collectAllSectionKeys([struct], `root-${idx}`));
     setExpandedSections(new Set(allKeys));
-  }, [structures, collectAllSectionKeys]);
+    // Also expand all article cards to show full preview text
+    setExpandedArticles(new Set(allArticles.map((a) => a.id)));
+  }, [structures, allArticles, collectAllSectionKeys]);
 
   const handleCollapseAll = useCallback(() => {
     setExpandedSections(new Set());
+    setExpandedArticles(new Set());
   }, []);
 
   const isAllExpanded = useMemo(() => {
@@ -423,9 +431,26 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
 
   const renderArticleCard = (article: ParsedArticle, index: number) => {
     const clipped = isArticleClipped(article);
-    const firstParagraph = article.paragraphs[0];
-    const previewText = firstParagraph?.sentences.join("").slice(0, 70) || "";
+    const isArticleExpanded = expandedArticles.has(article.id);
+    // Build full preview text from all paragraphs
+    const fullPreviewText = article.paragraphs
+      .map((p) => {
+        const num = p.paragraphNum ? `${p.paragraphNum}\u3000` : "";
+        return num + p.sentences.join("");
+      })
+      .join("\n");
+    const shortPreviewText = article.paragraphs[0]?.sentences.join("").slice(0, 70) || "";
     const hasParagraphs = article.paragraphs.length > 1;
+
+    const toggleArticleExpand = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setExpandedArticles((prev) => {
+        const next = new Set(prev);
+        if (next.has(article.id)) next.delete(article.id);
+        else next.add(article.id);
+        return next;
+      });
+    };
 
     return (
       <motion.div
@@ -433,7 +458,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: Math.min(index * 0.025, 0.25) }}
-        draggable={!clipped}
+        draggable={!clipped && !isArticleExpanded}
         onDragStart={(e) => handleDragStart(e as unknown as React.DragEvent, article)}
         className={`article-card group relative rounded-md border p-2.5 mb-1.5 transition-all ${
           clipped
@@ -441,12 +466,12 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
             : "bg-white border-slate-200 hover:border-primary/30 hover:bg-primary/5 cursor-grab active:cursor-grabbing"
         }`}
       >
-        {!clipped && (
+        {!clipped && !isArticleExpanded && (
           <div className="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
             <GripVertical className="w-3.5 h-3.5 text-primary" />
           </div>
         )}
-        <div className="pr-5">
+        <div className="pr-5" onClick={toggleArticleExpand} style={{cursor: 'pointer'}}>
           {article.articleCaption && (
             <span className="text-[10px] font-medium text-vermillion mb-0.5 block">
               {article.articleCaption}
@@ -467,10 +492,16 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
               </span>
             )}
           </div>
-          {previewText && (
-            <p className="text-[11px] text-slate-500 leading-relaxed line-clamp-2">
-              {previewText}...
+          {isArticleExpanded ? (
+            <p className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-line">
+              {fullPreviewText}
             </p>
+          ) : (
+            shortPreviewText && (
+              <p className="text-[11px] text-slate-500 leading-relaxed line-clamp-2">
+                {shortPreviewText}...
+              </p>
+            )
           )}
         </div>
 

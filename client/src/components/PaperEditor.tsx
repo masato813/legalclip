@@ -428,7 +428,14 @@ function SortableArticle({
       setAnnotationToolbar(null);
       return;
     }
-    const selectedText = sel.toString().trim();
+    let selectedText = sel.toString().trim();
+    // 項番号（「２」「３」など全角数字や漢数字）が先頭に含まれている場合は除去する
+    // 例: "２ 行政庁は..." → "行政庁は..."
+    selectedText = selectedText.replace(/^[０-９\d一二三四五六七八九十百]+\s*/, "").trim();
+    if (!selectedText) {
+      setAnnotationToolbar(null);
+      return;
+    }
     const range = sel.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     setAnnotationToolbar({

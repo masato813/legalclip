@@ -26,7 +26,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useDocument } from "@/contexts/DocumentContext";
 import type { DocumentItem, ArticleBlock, HeadingBlock, MemoBlock, TextAnnotation } from "@/contexts/DocumentContext";
-import type { DocumentArticle } from "@/lib/docx-generator";
+import type { DocumentArticle, DocumentItem as ArticleDocItem } from "@/lib/docx-generator";
 import { generateDocx } from "@/lib/docx-generator";
 import { generateTxt, generateMarkdown } from "@/lib/export-utils";
 import {
@@ -158,6 +158,72 @@ function AnnotatedText({
 }
 
 /* ============================
+   Table renderer
+   ============================ */
+function TableRenderer({ table }: { table: { rows: { cells: { text: string; colspan?: number; rowspan?: number; align?: string }[] }[] } }) {
+  return (
+    <div className="my-2 overflow-x-auto">
+      <table className="w-full text-[12.5px] border-collapse font-[var(--font-serif)] text-ink/85">
+        <tbody>
+          {table.rows.map((row, ri) => (
+            <tr key={ri}>
+              {row.cells.map((cell, ci) => (
+                <td
+                  key={ci}
+                  colSpan={cell.colspan}
+                  rowSpan={cell.rowspan}
+                  className="border border-ink/30 px-2 py-1 leading-[1.8] align-top"
+                  style={{
+                    textAlign: cell.align === "center" ? "center" : cell.align === "right" ? "right" : "left",
+                  }}
+                >
+                  {cell.text}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ============================
+   Item renderer (recursive: handles subitems and tables)
+   ============================ */
+type ArticleItem = ArticleDocItem;
+function ItemRenderer({
+  item,
+  annotations,
+  searchQuery,
+  depth,
+}: {
+  item: ArticleItem;
+  annotations: TextAnnotation[];
+  searchQuery: string;
+  depth: number;
+}) {
+  const indent = depth === 0 ? "pl-6" : depth === 1 ? "pl-10" : "pl-14";
+  return (
+    <div className={indent}>
+      {/* 項目テキスト */}
+      {(item.title || item.sentences.join("")) && (
+        <p className="text-[13.5px] leading-[2] text-ink/85 text-justify font-[var(--font-serif)]">
+          {item.title && <span className="font-semibold mr-1">{item.title}</span>}
+          <AnnotatedText text={item.sentences.join("")} annotations={annotations} searchQuery={searchQuery} />
+        </p>
+      )}
+      {/* 表 */}
+      {item.tableStruct && <TableRenderer table={item.tableStruct} />}
+      {/* サブ項目 */}
+      {item.subitems?.map((sub, si) => (
+        <ItemRenderer key={si} item={sub} annotations={annotations} searchQuery={searchQuery} depth={depth + 1} />
+      ))}
+    </div>
+  );
+}
+
+/* ============================
    Article content renderer
    ============================ */
 function ArticleContent({
@@ -187,28 +253,57 @@ function ArticleContent({
       </h4>
       {article.paragraphs.map((para, pi) => (
         <div key={pi} className="mb-2">
-          <p className="text-[13.5px] leading-[2] text-ink/85 text-justify font-[var(--font-serif)]" style={{ textIndent: "1em" }}>
-            {para.paragraphNum && (
-              <span className="font-semibold mr-1" style={{ marginLeft: "-1em" }}>
-                {para.paragraphNum}
-              </span>
-            )}
-            <AnnotatedText
-              text={para.sentences.join("")}
-              annotations={annotations}
-              searchQuery={searchQuery}
-            />
-          </p>
-          {para.items.map((item, ii) => (
-            <p key={ii} className="text-[13.5px] leading-[2] text-ink/85 pl-6 text-justify font-[var(--font-serif)]">
-              <span className="font-semibold mr-1">{item.title}</span>
+          {/* 本文テキスト */}
+          {para.sentences.join("") && (
+            <p className="text-[13.5px] leading-[2] text-ink/85 text-justify font-[var(--font-serif)]" style={{ textIndent: "1em" }}>
+              {para.paragraphNum && (
+                <span className="font-semibold mr-1" style={{ marginLeft: "-1em" }}>
+                  {para.paragraphNum}
+                </span>
+              )}
               <AnnotatedText
-                text={item.sentences.join("")}
+                text={para.sentences.join("")}
                 annotations={annotations}
                 searchQuery={searchQuery}
               />
             </p>
+          )}
+          {/* 本文なしで項番号のみある場合（表の前の番号行） */}
+          {!para.sentences.join("") && para.paragraphNum && (
+            <p className="text-[13.5px] leading-[2] text-ink/85 font-[var(--font-serif)] font-semibold">
+              {para.paragraphNum}
+            </p>
+          )}
+          {/* 号（Item）とサブ項目・表の再帰レンダリング */}
+          {para.items.map((item, ii) => (
+            <ItemRenderer key={ii} item={item} annotations={annotations} searchQuery={searchQuery} depth={0} />
           ))}
+          {/* 表（TableStruct） */}
+          {para.tableStruct && (
+            <div className="my-2 overflow-x-auto">
+              <table className="w-full text-[12.5px] border-collapse font-[var(--font-serif)] text-ink/85">
+                <tbody>
+                  {para.tableStruct.rows.map((row, ri) => (
+                    <tr key={ri}>
+                      {row.cells.map((cell, ci) => (
+                        <td
+                          key={ci}
+                          colSpan={cell.colspan}
+                          rowSpan={cell.rowspan}
+                          className="border border-ink/30 px-2 py-1 leading-[1.8] align-top"
+                          style={{
+                            textAlign: cell.align === "center" ? "center" : cell.align === "right" ? "right" : "left",
+                          }}
+                        >
+                          {cell.text}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       ))}
     </div>

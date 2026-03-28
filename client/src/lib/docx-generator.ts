@@ -14,10 +14,36 @@ import {
   SectionType,
   convertMillimetersToTwip,
   BorderStyle,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
   type IRunOptions,
 } from "docx";
 import { saveAs } from "file-saver";
 import type { TextAnnotation } from "@/contexts/DocumentContext";
+
+export interface DocumentTableCell {
+  text: string;
+  colspan?: number;
+  rowspan?: number;
+  align?: string;
+}
+
+export interface DocumentTableRow {
+  cells: DocumentTableCell[];
+}
+
+export interface DocumentTable {
+  rows: DocumentTableRow[];
+}
+
+export interface DocumentItem {
+  title: string;
+  sentences: string[];
+  subitems?: DocumentItem[];
+  tableStruct?: DocumentTable;
+}
 
 export interface DocumentArticle {
   id: string;
@@ -28,10 +54,8 @@ export interface DocumentArticle {
   paragraphs: {
     paragraphNum: string;
     sentences: string[];
-    items: {
-      title: string;
-      sentences: string[];
-    }[];
+    items: DocumentItem[];
+    tableStruct?: DocumentTable;
   }[];
   annotations?: TextAnnotation[];
 }
@@ -98,11 +122,69 @@ function buildAnnotatedRuns(
   });
 }
 
+/** DocumentTable から docx Table を生成 */
+function buildDocxTable(table: DocumentTable): Table {
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: table.rows.map(
+      (row) =>
+        new TableRow({
+          children: row.cells.map(
+            (cell) =>
+              new TableCell({
+                columnSpan: cell.colspan,
+                rowSpan: cell.rowspan,
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: cell.text,
+                        size: 20,
+                        font: "游明朝",
+                      }),
+                    ],
+                  }),
+                ],
+              })
+          ),
+        })
+    ),
+  });
+}
+
+/** DocumentItem（号・サブ項目）を再帰的に Paragraph[] に変換 */
+function buildItemParagraphs(
+  item: DocumentItem,
+  anns: TextAnnotation[],
+  baseRun: IRunOptions,
+  leftIndent: number,
+  out: (Paragraph | Table)[]
+): void {
+  const itemText = `${item.title}${item.sentences.join("") ? "\u3000" + item.sentences.join("") : ""}`;
+  if (itemText.trim()) {
+    out.push(
+      new Paragraph({
+        spacing: { after: 40 },
+        indent: { left: leftIndent },
+        children: buildAnnotatedRuns(itemText, anns, baseRun),
+      })
+    );
+  }
+  if (item.tableStruct) {
+    out.push(buildDocxTable(item.tableStruct));
+  }
+  if (item.subitems) {
+    for (const sub of item.subitems) {
+      buildItemParagraphs(sub, anns, baseRun, leftIndent + convertMillimetersToTwip(10), out);
+    }
+  }
+}
+
 export async function generateDocx(
   articles: DocumentArticle[],
   documentTitle?: string
 ) {
-  const children: Paragraph[] = [];
+  const children: (Paragraph | Table)[] = [];
 
   // Document title
   if (documentTitle) {
@@ -233,16 +315,14 @@ export async function generateDocx(
           })
         );
 
-        // Items (号)
+        // Items (号) with subitems and tables
         for (const item of para.items) {
-          const itemText = `${item.title}　${item.sentences.join("")}`;
-          children.push(
-            new Paragraph({
-              spacing: { after: 40 },
-              indent: { left: convertMillimetersToTwip(15) },
-              children: buildAnnotatedRuns(itemText, anns, baseRun),
-            })
-          );
+          buildItemParagraphs(item, anns, baseRun, convertMillimetersToTwip(15), children);
+        }
+
+        // Paragraph-level table
+        if (para.tableStruct) {
+          children.push(buildDocxTable(para.tableStruct));
         }
       }
     }

@@ -19,6 +19,26 @@ import type { DocumentArticle } from "./docx-generator";
 import type { ParsedArticle } from "./egov-api";
 
 // ============================
+// Helper: item to plain text (recursive)
+// ============================
+function itemToPlainText(item: { title: string; sentences: string[]; subitems?: unknown[]; tableStruct?: { rows: { cells: { text: string }[] }[] } }, indent: string): string[] {
+  const lines: string[] = [];
+  const text = `${indent}${item.title}${item.sentences.join("") ? "　" + item.sentences.join("") : ""}`;
+  if (text.trim()) lines.push(text);
+  if (item.tableStruct) {
+    for (const row of item.tableStruct.rows) {
+      lines.push(indent + row.cells.map((c) => c.text).join("　　"));
+    }
+  }
+  if (item.subitems) {
+    for (const sub of item.subitems as typeof item[]) {
+      lines.push(...itemToPlainText(sub, indent + "　"));
+    }
+  }
+  return lines;
+}
+
+// ============================
 // Helper: article to plain text
 // ============================
 function articleToPlainText(article: DocumentArticle | ParsedArticle, includeLawTitle = false): string {
@@ -42,7 +62,14 @@ function articleToPlainText(article: DocumentArticle | ParsedArticle, includeLaw
 
     const items = para.items || [];
     for (const item of items) {
-      lines.push(`　${item.title}　${item.sentences.join("")}`);
+      lines.push(...itemToPlainText(item as Parameters<typeof itemToPlainText>[0], "　"));
+    }
+
+    // Paragraph-level table
+    if ("tableStruct" in para && para.tableStruct) {
+      for (const row of para.tableStruct.rows) {
+        lines.push("　" + row.cells.map((c) => c.text).join("　　"));
+      }
     }
   }
 
@@ -96,7 +123,43 @@ export function generateTxt(articles: DocumentArticle[], documentTitle?: string)
 }
 
 // ============================
-// Markdown Export (抜粋)
+// Markdown helpers
+// ============================
+type MarkdownItem = { title: string; sentences: string[]; subitems?: unknown[]; tableStruct?: { rows: { cells: { text: string }[] }[] } };
+
+function tableToMarkdown(table: { rows: { cells: { text: string }[] }[] }): string[] {
+  if (!table.rows.length) return [];
+  const lines: string[] = [];
+  // Header row
+  const header = table.rows[0];
+  lines.push("| " + header.cells.map((c) => c.text || " ").join(" | ") + " |");
+  lines.push("|" + header.cells.map(() => "---").join("|") + "|");
+  for (let i = 1; i < table.rows.length; i++) {
+    lines.push("| " + table.rows[i].cells.map((c) => c.text || " ").join(" | ") + " |");
+  }
+  return lines;
+}
+
+function itemToMarkdown(item: MarkdownItem, depth: number): string[] {
+  const lines: string[] = [];
+  const prefix = "  ".repeat(depth) + "- ";
+  const text = `${item.title}${item.sentences.join("") ? "　" + item.sentences.join("") : ""}`;
+  if (text.trim()) lines.push(`${prefix}${text}`);
+  if (item.tableStruct) {
+    lines.push("");
+    lines.push(...tableToMarkdown(item.tableStruct).map((l) => "  ".repeat(depth + 1) + l));
+    lines.push("");
+  }
+  if (item.subitems) {
+    for (const sub of item.subitems as MarkdownItem[]) {
+      lines.push(...itemToMarkdown(sub, depth + 1));
+    }
+  }
+  return lines;
+}
+
+// ============================
+// Markdown Export (抄粋)
 // ============================
 export function generateMarkdown(articles: DocumentArticle[], documentTitle?: string) {
   const lines: string[] = [];
@@ -139,9 +202,15 @@ export function generateMarkdown(articles: DocumentArticle[], documentTitle?: st
         lines.push("");
 
         for (const item of para.items) {
-          lines.push(`- **${item.title}**　${item.sentences.join("")}`);
+          lines.push(...itemToMarkdown(item as Parameters<typeof itemToMarkdown>[0], 0));
         }
         if (para.items.length > 0) lines.push("");
+
+        // Paragraph-level table
+        if (para.tableStruct) {
+          lines.push(...tableToMarkdown(para.tableStruct));
+          lines.push("");
+        }
       }
     }
 

@@ -216,7 +216,12 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
       lawNum: lawNum,
       articleTitle: article.articleTitle,
       articleCaption: article.articleCaption,
-      paragraphs,
+      paragraphs: paragraphs.map((p) => ({
+        paragraphNum: p.paragraphNum,
+        sentences: p.sentences,
+        items: p.items,
+        tableStruct: p.tableStruct,
+      })),
     };
   }, [makeLawId, lawTitle, lawNum]);
 

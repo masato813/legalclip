@@ -122,10 +122,11 @@ function buildAnnotatedRuns(
   });
 }
 
-/** DocumentTable から docx Table を生成 */
-function buildDocxTable(table: DocumentTable): Table {
+/** DocumentTable から docx Table を生成（leftIndent: twip単位） */
+function buildDocxTable(table: DocumentTable, leftIndent = 0): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    indent: leftIndent > 0 ? { size: leftIndent, type: WidthType.DXA } : undefined,
     rows: table.rows.map(
       (row) =>
         new TableRow({
@@ -171,7 +172,7 @@ function buildItemParagraphs(
     );
   }
   if (item.tableStruct) {
-    out.push(buildDocxTable(item.tableStruct));
+    out.push(buildDocxTable(item.tableStruct, leftIndent));
   }
   if (item.subitems) {
     for (const sub of item.subitems) {
@@ -322,7 +323,7 @@ export async function generateDocx(
 
         // Paragraph-level table
         if (para.tableStruct) {
-          children.push(buildDocxTable(para.tableStruct));
+          children.push(buildDocxTable(para.tableStruct, convertMillimetersToTwip(10)));
         }
       }
     }

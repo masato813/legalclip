@@ -122,10 +122,15 @@ function buildAnnotatedRuns(
   });
 }
 
+// A4 本文幅: 210mm - 左右25mm*2 = 160mm = 9072 twip
+const PAGE_BODY_WIDTH_TWIP = convertMillimetersToTwip(160);
+
 /** DocumentTable から docx Table を生成（leftIndent: twip単位） */
 function buildDocxTable(table: DocumentTable, leftIndent = 0): Table {
+  // 表幅 = 本文幅 - 左インデント分
+  const tableWidth = Math.max(PAGE_BODY_WIDTH_TWIP - leftIndent, convertMillimetersToTwip(80));
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: tableWidth, type: WidthType.DXA },
     indent: leftIndent > 0 ? { size: leftIndent, type: WidthType.DXA } : undefined,
     rows: table.rows.map(
       (row) =>

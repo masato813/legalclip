@@ -28,12 +28,17 @@ import type { ParsedArticle, ParsedItem } from "./egov-api";
 type AnyTable = { rows: { cells: { text: string; colspan?: number; rowspan?: number }[] }[] };
 type AnyItem = { title: string; sentences: string[]; subitems?: AnyItem[]; tableStruct?: AnyTable };
 
+// A4 本文幅: 210mm - 左右25mm*2 = 160mm = 9072 twip
+const PAGE_BODY_WIDTH_TWIP = convertMillimetersToTwip(160);
+
 // ============================
 // Helper: build docx Table with optional left indent
 // ============================
 function buildFullDocxTable(table: AnyTable, leftIndent = 0): Table {
+  // 表幅 = 本文幅 - 左インデント分
+  const tableWidth = Math.max(PAGE_BODY_WIDTH_TWIP - leftIndent, convertMillimetersToTwip(80));
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: tableWidth, type: WidthType.DXA },
     indent: leftIndent > 0 ? { size: leftIndent, type: WidthType.DXA } : undefined,
     rows: table.rows.map(
       (row) =>

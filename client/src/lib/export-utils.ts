@@ -14,14 +14,85 @@ import {
   SectionType,
   convertMillimetersToTwip,
   BorderStyle,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
 } from "docx";
 import type { DocumentArticle } from "./docx-generator";
-import type { ParsedArticle } from "./egov-api";
+import type { ParsedArticle, ParsedItem } from "./egov-api";
+
+// ============================
+// Shared table type (works for both ParsedTable and DocumentTable)
+// ============================
+type AnyTable = { rows: { cells: { text: string; colspan?: number; rowspan?: number }[] }[] };
+type AnyItem = { title: string; sentences: string[]; subitems?: AnyItem[]; tableStruct?: AnyTable };
+
+// ============================
+// Helper: build docx Table with optional left indent
+// ============================
+function buildFullDocxTable(table: AnyTable, leftIndent = 0): Table {
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    indent: leftIndent > 0 ? { size: leftIndent, type: WidthType.DXA } : undefined,
+    rows: table.rows.map(
+      (row) =>
+        new TableRow({
+          children: row.cells.map(
+            (cell) =>
+              new TableCell({
+                columnSpan: cell.colspan,
+                rowSpan: cell.rowspan,
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: cell.text,
+                        size: 20,
+                        font: "游明朝",
+                      }),
+                    ],
+                  }),
+                ],
+              })
+          ),
+        })
+    ),
+  });
+}
+
+// ============================
+// Helper: item to docx paragraphs (recursive)
+// ============================
+function buildFullItemParagraphs(
+  item: AnyItem,
+  leftIndent: number,
+  out: (Paragraph | Table)[]
+): void {
+  const text = `${item.title}${item.sentences.join("") ? "　" + item.sentences.join("") : ""}`;
+  if (text.trim()) {
+    out.push(
+      new Paragraph({
+        spacing: { after: 40 },
+        indent: { left: leftIndent },
+        children: [new TextRun({ text, size: 22, font: "游明朝" })],
+      })
+    );
+  }
+  if (item.tableStruct) {
+    out.push(buildFullDocxTable(item.tableStruct, leftIndent));
+  }
+  if (item.subitems) {
+    for (const sub of item.subitems) {
+      buildFullItemParagraphs(sub, leftIndent + convertMillimetersToTwip(10), out);
+    }
+  }
+}
 
 // ============================
 // Helper: item to plain text (recursive)
 // ============================
-function itemToPlainText(item: { title: string; sentences: string[]; subitems?: unknown[]; tableStruct?: { rows: { cells: { text: string }[] }[] } }, indent: string): string[] {
+function itemToPlainText(item: AnyItem, indent: string): string[] {
   const lines: string[] = [];
   const text = `${indent}${item.title}${item.sentences.join("") ? "　" + item.sentences.join("") : ""}`;
   if (text.trim()) lines.push(text);
@@ -31,7 +102,7 @@ function itemToPlainText(item: { title: string; sentences: string[]; subitems?: 
     }
   }
   if (item.subitems) {
-    for (const sub of item.subitems as typeof item[]) {
+    for (const sub of item.subitems) {
       lines.push(...itemToPlainText(sub, indent + "　"));
     }
   }
@@ -41,13 +112,8 @@ function itemToPlainText(item: { title: string; sentences: string[]; subitems?: 
 // ============================
 // Helper: article to plain text
 // ============================
-function articleToPlainText(article: DocumentArticle | ParsedArticle, includeLawTitle = false): string {
+function articleToPlainText(article: DocumentArticle | ParsedArticle): string {
   const lines: string[] = [];
-
-  if (includeLawTitle && "lawTitle" in article) {
-    // DocumentArticle type
-  }
-
   const caption = "articleCaption" in article ? article.articleCaption : "";
   const title = "articleTitle" in article ? article.articleTitle : "";
   const paragraphs = article.paragraphs;
@@ -60,9 +126,9 @@ function articleToPlainText(article: DocumentArticle | ParsedArticle, includeLaw
     const text = para.sentences.join("");
     lines.push(`${prefix}${text}`);
 
-    const items = para.items || [];
+    const items = (para.items || []) as AnyItem[];
     for (const item of items) {
-      lines.push(...itemToPlainText(item as Parameters<typeof itemToPlainText>[0], "　"));
+      lines.push(...itemToPlainText(item, "　"));
     }
 
     // Paragraph-level table
@@ -74,6 +140,39 @@ function articleToPlainText(article: DocumentArticle | ParsedArticle, includeLaw
   }
 
   return lines.join("\n");
+}
+
+// ============================
+// Markdown helpers
+// ============================
+function tableToMarkdown(table: AnyTable): string[] {
+  if (!table.rows.length) return [];
+  const lines: string[] = [];
+  const header = table.rows[0];
+  lines.push("| " + header.cells.map((c) => c.text || " ").join(" | ") + " |");
+  lines.push("|" + header.cells.map(() => "---").join("|") + "|");
+  for (let i = 1; i < table.rows.length; i++) {
+    lines.push("| " + table.rows[i].cells.map((c) => c.text || " ").join(" | ") + " |");
+  }
+  return lines;
+}
+
+function itemToMarkdown(item: AnyItem, depth: number): string[] {
+  const lines: string[] = [];
+  const prefix = "  ".repeat(depth) + "- ";
+  const text = `${item.title}${item.sentences.join("") ? "　" + item.sentences.join("") : ""}`;
+  if (text.trim()) lines.push(`${prefix}${text}`);
+  if (item.tableStruct) {
+    lines.push("");
+    lines.push(...tableToMarkdown(item.tableStruct).map((l) => "  ".repeat(depth + 1) + l));
+    lines.push("");
+  }
+  if (item.subitems) {
+    for (const sub of item.subitems) {
+      lines.push(...itemToMarkdown(sub, depth + 1));
+    }
+  }
+  return lines;
 }
 
 // ============================
@@ -89,7 +188,6 @@ export function generateTxt(articles: DocumentArticle[], documentTitle?: string)
     sections.push("");
   }
 
-  // Group by law
   const lawGroups = new Map<string, DocumentArticle[]>();
   for (const article of articles) {
     const key = article.lawTitle;
@@ -123,43 +221,7 @@ export function generateTxt(articles: DocumentArticle[], documentTitle?: string)
 }
 
 // ============================
-// Markdown helpers
-// ============================
-type MarkdownItem = { title: string; sentences: string[]; subitems?: unknown[]; tableStruct?: { rows: { cells: { text: string }[] }[] } };
-
-function tableToMarkdown(table: { rows: { cells: { text: string }[] }[] }): string[] {
-  if (!table.rows.length) return [];
-  const lines: string[] = [];
-  // Header row
-  const header = table.rows[0];
-  lines.push("| " + header.cells.map((c) => c.text || " ").join(" | ") + " |");
-  lines.push("|" + header.cells.map(() => "---").join("|") + "|");
-  for (let i = 1; i < table.rows.length; i++) {
-    lines.push("| " + table.rows[i].cells.map((c) => c.text || " ").join(" | ") + " |");
-  }
-  return lines;
-}
-
-function itemToMarkdown(item: MarkdownItem, depth: number): string[] {
-  const lines: string[] = [];
-  const prefix = "  ".repeat(depth) + "- ";
-  const text = `${item.title}${item.sentences.join("") ? "　" + item.sentences.join("") : ""}`;
-  if (text.trim()) lines.push(`${prefix}${text}`);
-  if (item.tableStruct) {
-    lines.push("");
-    lines.push(...tableToMarkdown(item.tableStruct).map((l) => "  ".repeat(depth + 1) + l));
-    lines.push("");
-  }
-  if (item.subitems) {
-    for (const sub of item.subitems as MarkdownItem[]) {
-      lines.push(...itemToMarkdown(sub, depth + 1));
-    }
-  }
-  return lines;
-}
-
-// ============================
-// Markdown Export (抄粋)
+// Markdown Export (抜粋)
 // ============================
 export function generateMarkdown(articles: DocumentArticle[], documentTitle?: string) {
   const lines: string[] = [];
@@ -173,7 +235,6 @@ export function generateMarkdown(articles: DocumentArticle[], documentTitle?: st
     lines.push("");
   }
 
-  // Group by law
   const lawGroups = new Map<string, DocumentArticle[]>();
   for (const article of articles) {
     const key = article.lawTitle;
@@ -201,12 +262,11 @@ export function generateMarkdown(articles: DocumentArticle[], documentTitle?: st
         lines.push(`${prefix}${para.sentences.join("")}`);
         lines.push("");
 
-        for (const item of para.items) {
-          lines.push(...itemToMarkdown(item as Parameters<typeof itemToMarkdown>[0], 0));
+        for (const item of para.items as AnyItem[]) {
+          lines.push(...itemToMarkdown(item, 0));
         }
         if (para.items.length > 0) lines.push("");
 
-        // Paragraph-level table
         if (para.tableStruct) {
           lines.push(...tableToMarkdown(para.tableStruct));
           lines.push("");
@@ -235,7 +295,7 @@ export async function generateFullLawDocx(
   lawNum: string,
   articles: ParsedArticle[]
 ) {
-  const children: Paragraph[] = [];
+  const children: (Paragraph | Table)[] = [];
 
   // Title
   children.push(
@@ -325,20 +385,14 @@ export async function generateFullLawDocx(
         })
       );
 
-      for (const item of para.items) {
-        children.push(
-          new Paragraph({
-            spacing: { after: 40 },
-            indent: { left: convertMillimetersToTwip(15) },
-            children: [
-              new TextRun({
-                text: `${item.title}　${item.sentences.join("")}`,
-                size: 22,
-                font: "游明朝",
-              }),
-            ],
-          })
-        );
+      // Items with subitems and tables
+      for (const item of para.items as AnyItem[]) {
+        buildFullItemParagraphs(item, convertMillimetersToTwip(15), children);
+      }
+
+      // Paragraph-level table
+      if (para.tableStruct) {
+        children.push(buildFullDocxTable(para.tableStruct, convertMillimetersToTwip(10)));
       }
     }
   }
@@ -391,8 +445,15 @@ export function generateFullLawTxt(
       const prefix = para.paragraphNum ? `${para.paragraphNum}　` : "";
       lines.push(`${prefix}${para.sentences.join("")}`);
 
-      for (const item of para.items) {
-        lines.push(`　${item.title}　${item.sentences.join("")}`);
+      for (const item of para.items as AnyItem[]) {
+        lines.push(...itemToPlainText(item, "　"));
+      }
+
+      // Paragraph-level table
+      if (para.tableStruct) {
+        for (const row of para.tableStruct.rows) {
+          lines.push("　" + row.cells.map((c) => c.text).join("　　"));
+        }
       }
     }
     lines.push("");
@@ -432,10 +493,16 @@ export function generateFullLawMarkdown(
       lines.push(`${prefix}${para.sentences.join("")}`);
       lines.push("");
 
-      for (const item of para.items) {
-        lines.push(`- **${item.title}**　${item.sentences.join("")}`);
+      for (const item of para.items as AnyItem[]) {
+        lines.push(...itemToMarkdown(item, 0));
       }
       if (para.items.length > 0) lines.push("");
+
+      // Paragraph-level table
+      if (para.tableStruct) {
+        lines.push(...tableToMarkdown(para.tableStruct));
+        lines.push("");
+      }
     }
   }
 

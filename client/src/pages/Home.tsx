@@ -5,7 +5,7 @@
  * 改善: リサイズ可能サイドバー、全文ダウンロードダイアログ、複数形式ダウンロード
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import LawSearch from "@/components/LawSearch";
 import PaperEditor from "@/components/PaperEditor";
 import Outline from "@/components/Outline";
@@ -146,6 +146,24 @@ function FullLawDownloadDialog({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingFormat, setGeneratingFormat] = useState<string | null>(null);
 
+  // 日付プレフィックス（デフォルト: 今日の日付 YYYY-MM-DD）
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+  const [datePrefix, setDatePrefix] = useState(todayStr);
+
+  // ダイアログを開くたびに今日の日付にリセット
+  useEffect(() => {
+    if (open) {
+      const d = new Date();
+      setDatePrefix(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+    }
+  }, [open]);
+
+  // ファイル名: 日付プレフィックスが空なら法令名のみ
+  const fileName = datePrefix.trim() ? `${datePrefix.trim()}${lawTitle}` : lawTitle;
+
   const handleDownload = useCallback(
     async (format: "docx" | "txt" | "md") => {
       setIsGenerating(true);
@@ -153,15 +171,15 @@ function FullLawDownloadDialog({
       try {
         switch (format) {
           case "docx":
-            await generateFullLawDocx(lawTitle, lawNum, articles);
+            await generateFullLawDocx(lawTitle, lawNum, articles, fileName);
             toast.success("Word形式でダウンロードしました");
             break;
           case "txt":
-            generateFullLawTxt(lawTitle, lawNum, articles);
+            generateFullLawTxt(lawTitle, lawNum, articles, fileName);
             toast.success("テキスト形式でダウンロードしました");
             break;
           case "md":
-            generateFullLawMarkdown(lawTitle, lawNum, articles);
+            generateFullLawMarkdown(lawTitle, lawNum, articles, fileName);
             toast.success("Markdown形式でダウンロードしました");
             break;
         }
@@ -174,7 +192,7 @@ function FullLawDownloadDialog({
         setGeneratingFormat(null);
       }
     },
-    [lawTitle, lawNum, articles, onClose]
+    [lawTitle, lawNum, articles, onClose, fileName]
   );
 
   return (
@@ -213,6 +231,26 @@ function FullLawDownloadDialog({
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* ファイル名設定 */}
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                ファイル名プレフィックス
+              </label>
+              <div className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-500">
+                <input
+                  type="text"
+                  value={datePrefix}
+                  onChange={(e) => setDatePrefix(e.target.value)}
+                  placeholder="例: 2026-03-29"
+                  className="flex-1 bg-transparent outline-none text-slate-800 placeholder-slate-400 text-xs"
+                />
+                <span className="text-slate-400 shrink-0">{lawTitle}</span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                ファイル名: <span className="text-slate-600 font-medium">{fileName}</span>
+              </p>
             </div>
 
             {/* Format buttons */}

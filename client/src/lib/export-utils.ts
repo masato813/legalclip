@@ -298,8 +298,10 @@ export function generateMarkdown(articles: DocumentArticle[], documentTitle?: st
 export async function generateFullLawDocx(
   lawTitle: string,
   lawNum: string,
-  articles: ParsedArticle[]
+  articles: ParsedArticle[],
+  fileName?: string
 ) {
+  const baseName = fileName ?? lawTitle;
   const children: (Paragraph | Table)[] = [];
 
   // Title
@@ -422,7 +424,7 @@ export async function generateFullLawDocx(
   });
 
   const blob = await Packer.toBlob(doc);
-  saveAs(blob, `${lawTitle}.docx`);
+  saveAs(blob, `${baseName}.docx`);
 }
 
 // ============================
@@ -431,8 +433,10 @@ export async function generateFullLawDocx(
 export function generateFullLawTxt(
   lawTitle: string,
   lawNum: string,
-  articles: ParsedArticle[]
+  articles: ParsedArticle[],
+  fileName?: string
 ) {
+  const baseName = fileName ?? lawTitle;
   const lines: string[] = [];
 
   lines.push(lawTitle);
@@ -466,7 +470,7 @@ export function generateFullLawTxt(
 
   const content = lines.join("\n");
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  saveAs(blob, `${lawTitle}.txt`);
+  saveAs(blob, `${baseName}.txt`);
 }
 
 // ============================
@@ -475,8 +479,10 @@ export function generateFullLawTxt(
 export function generateFullLawMarkdown(
   lawTitle: string,
   lawNum: string,
-  articles: ParsedArticle[]
+  articles: ParsedArticle[],
+  fileName?: string
 ) {
+  const baseName = fileName ?? lawTitle;
   const lines: string[] = [];
 
   lines.push(`# ${lawTitle}`);
@@ -513,5 +519,5 @@ export function generateFullLawMarkdown(
 
   const content = lines.join("\n");
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-  saveAs(blob, `${lawTitle}.md`);
+  saveAs(blob, `${baseName}.md`);
 }

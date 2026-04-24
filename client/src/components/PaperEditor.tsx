@@ -238,10 +238,15 @@ function ArticleContent({
   const annotations = article.annotations ?? [];
   return (
     <div className={`py-3 transition-all ${isOverlay ? "" : "border-l-2 border-transparent hover:border-primary/40"} pl-4`}>
-      <div className="flex items-baseline gap-2 mb-1.5">
+      <div className="flex items-baseline gap-2 mb-1.5 flex-wrap">
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-vermillion/8 text-vermillion font-semibold font-[var(--font-ui)]">
           {article.lawTitle}
         </span>
+        {article.lawAmendDate && (
+          <span className="text-[10px] text-ink/40 font-[var(--font-ui)]">
+            最終改正: {article.lawAmendDate}
+          </span>
+        )}
       </div>
       {article.articleCaption && (
         <p className="text-xs font-semibold text-ink/60 mb-0.5 font-[var(--font-sans)]">

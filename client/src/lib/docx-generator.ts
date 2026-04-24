@@ -49,6 +49,7 @@ export interface DocumentArticle {
   id: string;
   lawTitle: string;
   lawNum: string;
+  lawAmendDate?: string;  // 最終改正日（YYYY-MM-DD形式）
   articleTitle: string;
   articleCaption: string;
   paragraphs: {
@@ -258,12 +259,29 @@ export async function generateDocx(
     if (lawArticles[0]?.lawNum) {
       children.push(
         new Paragraph({
-          spacing: { after: 200 },
+          spacing: { after: lawArticles[0].lawAmendDate ? 50 : 200 },
           children: [
             new TextRun({
               text: `（${lawArticles[0].lawNum}）`,
               size: 20,
               color: "666666",
+              font: "游ゴシック",
+            }),
+          ],
+        })
+      );
+    }
+
+    // Amendment date
+    if (lawArticles[0]?.lawAmendDate) {
+      children.push(
+        new Paragraph({
+          spacing: { after: 200 },
+          children: [
+            new TextRun({
+              text: `最終改正: ${lawArticles[0].lawAmendDate}`,
+              size: 20,
+              color: "888888",
               font: "游ゴシック",
             }),
           ],

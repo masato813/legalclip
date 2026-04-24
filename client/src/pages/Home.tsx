@@ -133,6 +133,7 @@ interface FullLawDialogProps {
   onClose: () => void;
   lawTitle: string;
   lawNum: string;
+  lawAmendDate?: string;
   articles: ParsedArticle[];
 }
 
@@ -141,6 +142,7 @@ function FullLawDownloadDialog({
   onClose,
   lawTitle,
   lawNum,
+  lawAmendDate,
   articles,
 }: FullLawDialogProps) {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -171,15 +173,15 @@ function FullLawDownloadDialog({
       try {
         switch (format) {
           case "docx":
-            await generateFullLawDocx(lawTitle, lawNum, articles, fileName);
+            await generateFullLawDocx(lawTitle, lawNum, articles, fileName, lawAmendDate);
             toast.success("Word形式でダウンロードしました");
             break;
           case "txt":
-            generateFullLawTxt(lawTitle, lawNum, articles, fileName);
+            generateFullLawTxt(lawTitle, lawNum, articles, fileName, lawAmendDate);
             toast.success("テキスト形式でダウンロードしました");
             break;
           case "md":
-            generateFullLawMarkdown(lawTitle, lawNum, articles, fileName);
+            generateFullLawMarkdown(lawTitle, lawNum, articles, fileName, lawAmendDate);
             toast.success("Markdown形式でダウンロードしました");
             break;
         }
@@ -398,6 +400,7 @@ function MainLayout() {
     open: boolean;
     lawTitle: string;
     lawNum: string;
+    lawAmendDate?: string;
     articles: ParsedArticle[];
   }>({ open: false, lawTitle: "", lawNum: "", articles: [] });
 
@@ -415,9 +418,10 @@ function MainLayout() {
       lawTitle: string,
       lawNum: string,
       articles: ParsedArticle[],
-      _lawFullText: LawFullTextNode
+      _lawFullText: LawFullTextNode,
+      lawAmendDate?: string
     ) => {
-      setFullLawDialog({ open: true, lawTitle, lawNum, articles });
+      setFullLawDialog({ open: true, lawTitle, lawNum, lawAmendDate, articles });
     },
     []
   );
@@ -520,6 +524,7 @@ function MainLayout() {
         }
         lawTitle={fullLawDialog.lawTitle}
         lawNum={fullLawDialog.lawNum}
+        lawAmendDate={fullLawDialog.lawAmendDate}
         articles={fullLawDialog.articles}
       />
     </div>

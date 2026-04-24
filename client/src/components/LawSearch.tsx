@@ -57,7 +57,7 @@ const QUICK_ACCESS_LAWS = [
 ];
 
 interface LawSearchProps {
-  onDownloadFullLaw?: (lawTitle: string, lawNum: string, articles: ParsedArticle[], lawFullText: LawFullTextNode) => void;
+  onDownloadFullLaw?: (lawTitle: string, lawNum: string, articles: ParsedArticle[], lawFullText: LawFullTextNode, lawAmendDate?: string) => void;
 }
 
 export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
@@ -78,6 +78,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
   const [showFilter, setShowFilter] = useState(false);
   const [lawFullTextData, setLawFullTextData] = useState<LawFullTextNode | null>(null);
   const [currentLawId, setCurrentLawId] = useState<string>("");
+  const [lawAmendDate, setLawAmendDate] = useState<string>("");  // 最終改正日
   const searchInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -122,6 +123,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
       const struct = extractStructure(data.law_full_text);
       setLawTitle(title);
       setLawNum(law.law_info.law_num);
+      setLawAmendDate(data.revision_info.amendment_enforcement_date || "");
       setAllArticles(articles);
       setStructures(struct);
       setLawFullTextData(data.law_full_text);
@@ -152,6 +154,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
       const struct = extractStructure(data.law_full_text);
       setLawTitle(extractedTitle);
       setLawNum(num);
+      setLawAmendDate(data.revision_info.amendment_enforcement_date || "");
       setAllArticles(articles);
       setStructures(struct);
       setLawFullTextData(data.law_full_text);
@@ -214,6 +217,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
       id,
       lawTitle: lawTitle,
       lawNum: lawNum,
+      lawAmendDate: lawAmendDate || undefined,
       articleTitle: article.articleTitle,
       articleCaption: article.articleCaption,
       paragraphs: paragraphs.map((p) => ({
@@ -223,7 +227,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
         tableStruct: p.tableStruct,
       })),
     };
-  }, [makeLawId, lawTitle, lawNum]);
+  }, [makeLawId, lawTitle, lawNum, lawAmendDate]);
 
   const handleAddArticle = useCallback(
     (article: ParsedArticle) => {
@@ -415,7 +419,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
 
   const handleFullLawDownload = useCallback(() => {
     if (onDownloadFullLaw && lawFullTextData) {
-      onDownloadFullLaw(lawTitle, lawNum, allArticles, lawFullTextData);
+      onDownloadFullLaw(lawTitle, lawNum, allArticles, lawFullTextData, lawAmendDate || undefined);
     }
   }, [onDownloadFullLaw, lawTitle, lawNum, allArticles, lawFullTextData]);
 

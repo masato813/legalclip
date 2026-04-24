@@ -205,6 +205,9 @@ export function generateTxt(articles: DocumentArticle[], documentTitle?: string)
     if (lawArticles[0]?.lawNum) {
       sections.push(`  （${lawArticles[0].lawNum}）`);
     }
+    if (lawArticles[0]?.lawAmendDate) {
+      sections.push(`  最終改正: ${lawArticles[0].lawAmendDate}`);
+    }
     sections.push("");
 
     for (const article of lawArticles) {
@@ -253,6 +256,10 @@ export function generateMarkdown(articles: DocumentArticle[], documentTitle?: st
       lines.push("");
       lines.push(`*${lawArticles[0].lawNum}*`);
     }
+    if (lawArticles[0]?.lawAmendDate) {
+      lines.push("");
+      lines.push(`*最終改正: ${lawArticles[0].lawAmendDate}*`);
+    }
     lines.push("");
 
     for (const article of lawArticles) {
@@ -299,7 +306,8 @@ export async function generateFullLawDocx(
   lawTitle: string,
   lawNum: string,
   articles: ParsedArticle[],
-  fileName?: string
+  fileName?: string,
+  lawAmendDate?: string
 ) {
   const baseName = fileName ?? lawTitle;
   const children: (Paragraph | Table)[] = [];
@@ -329,6 +337,24 @@ export async function generateFullLawDocx(
       ],
     })
   );
+
+  // Amendment date (if available)
+  if (lawAmendDate) {
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 },
+        children: [
+          new TextRun({
+            text: `最終改正: ${lawAmendDate}`,
+            size: 20,
+            color: "888888",
+            font: "游ゴシック",
+          }),
+        ],
+      })
+    );
+  }
 
   // Separator
   children.push(
@@ -434,13 +460,15 @@ export function generateFullLawTxt(
   lawTitle: string,
   lawNum: string,
   articles: ParsedArticle[],
-  fileName?: string
+  fileName?: string,
+  lawAmendDate?: string
 ) {
   const baseName = fileName ?? lawTitle;
   const lines: string[] = [];
 
   lines.push(lawTitle);
   lines.push(`（${lawNum}）`);
+  if (lawAmendDate) lines.push(`最終改正: ${lawAmendDate}`);
   lines.push("=".repeat(lawTitle.length * 2));
   lines.push("");
 
@@ -480,7 +508,8 @@ export function generateFullLawMarkdown(
   lawTitle: string,
   lawNum: string,
   articles: ParsedArticle[],
-  fileName?: string
+  fileName?: string,
+  lawAmendDate?: string
 ) {
   const baseName = fileName ?? lawTitle;
   const lines: string[] = [];
@@ -488,6 +517,10 @@ export function generateFullLawMarkdown(
   lines.push(`# ${lawTitle}`);
   lines.push("");
   lines.push(`*${lawNum}*`);
+  if (lawAmendDate) {
+    lines.push("");
+    lines.push(`*最終改正: ${lawAmendDate}*`);
+  }
   lines.push("");
   lines.push("---");
   lines.push("");

@@ -117,7 +117,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     setIsLoadingLaw(true);
     setCurrentLawId(law.law_info.law_id);
     try {
-      const data = await getLawData(law.law_info.law_id);
+      const data = await getLawData(law.law_info.law_id, law.law_info.law_num);
       const title = extractLawTitle(data.law_full_text) || law.revision_info.law_title;
       const articles = extractArticles(data.law_full_text);
       const struct = extractStructure(data.law_full_text);
@@ -148,7 +148,7 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     setIsLoadingLaw(true);
     setCurrentLawId(lawId);
     try {
-      const data = await getLawData(lawId);
+      const data = await getLawData(lawId, num);
       const extractedTitle = extractLawTitle(data.law_full_text) || title;
       const articles = extractArticles(data.law_full_text);
       const struct = extractStructure(data.law_full_text);

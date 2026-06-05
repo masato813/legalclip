@@ -132,15 +132,72 @@ export async function searchLaws(
   return res.json();
 }
 
-export async function getLawData(lawIdOrNum: string): Promise<LawDataResponse> {
+/**
+ * law_num（法令番号）から最新の law_id を取得する
+ * 改正によって law_id が変わった場合のフォールバック用
+ */
+export async function getLatestLawIdByNum(lawNum: string): Promise<string | null> {
+  try {
+    const params = new URLSearchParams({
+      law_num: lawNum,
+      response_format: "json",
+      limit: "1",
+    });
+    const res = await fetch(`${BASE_URL}/laws?${params}`);
+    if (!res.ok) return null;
+    const data: LawListResponse = await res.json();
+    if (data.laws && data.laws.length > 0) {
+      return data.laws[0].law_info.law_id;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getLawData(lawIdOrNum: string, lawNum?: string): Promise<LawDataResponse> {
   const params = new URLSearchParams({
     response_format: "json",
     law_full_text_format: "json",
   });
 
   const res = await fetch(`${BASE_URL}/law_data/${encodeURIComponent(lawIdOrNum)}?${params}`);
+
+  // 404の場合、law_numで最新law_idを再検索してリトライ
+  if (res.status === 404 && lawNum) {
+    const latestId = await getLatestLawIdByNum(lawNum);
+    if (latestId && latestId !== lawIdOrNum) {
+      const retryRes = await fetch(`${BASE_URL}/law_data/${encodeURIComponent(latestId)}?${params}`);
+      if (!retryRes.ok) throw new Error(`法令本文の取得に失敗しました: ${retryRes.status}`);
+      const retryData: LawDataResponse = await retryRes.json();
+      // エラーレスポンス（codeフィールドあり）の場合はスロー
+      if ((retryData as unknown as { code?: number }).code) {
+        throw new Error(`法令本文の取得に失敗しました`);
+      }
+      return retryData;
+    }
+  }
+
   if (!res.ok) throw new Error(`法令本文の取得に失敗しました: ${res.status}`);
-  return res.json();
+  const data: LawDataResponse = await res.json();
+  // e-Gov APIは404でも200を返す場合があり、codeフィールドでエラーを示す
+  if ((data as unknown as { code?: number }).code) {
+    // law_numフォールバック
+    if (lawNum) {
+      const latestId = await getLatestLawIdByNum(lawNum);
+      if (latestId && latestId !== lawIdOrNum) {
+        const retryRes = await fetch(`${BASE_URL}/law_data/${encodeURIComponent(latestId)}?${params}`);
+        if (!retryRes.ok) throw new Error(`法令本文の取得に失敗しました: ${retryRes.status}`);
+        const retryData: LawDataResponse = await retryRes.json();
+        if ((retryData as unknown as { code?: number }).code) {
+          throw new Error(`法令本文の取得に失敗しました`);
+        }
+        return retryData;
+      }
+    }
+    throw new Error(`法令本文の取得に失敗しました`);
+  }
+  return data;
 }
 
 export async function keywordSearch(

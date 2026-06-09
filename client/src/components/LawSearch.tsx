@@ -374,7 +374,37 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     return { ...struct, articles: filteredArticles, children: filteredChildren };
   }, [articleFilter, matchesFilter]);
 
-  /** セクション内の全条文を再帰的に収集して最初と最後の条文番号を返す */
+  /** 漢数字を含む条文番号を「第37条」形式に変換 */
+  const toArabicArticleNum = (articleNum: string): string => {
+    const kanjiMap: Record<string, number> = {
+      一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
+      十: 10, 百: 100, 千: 1000,
+    };
+    const parseKanji = (s: string): number => {
+      let result = 0;
+      let current = 0;
+      for (const ch of s) {
+        const v = kanjiMap[ch];
+        if (v === undefined) return NaN;
+        if (v >= 10) {
+          result += (current || 1) * v;
+          current = 0;
+        } else {
+          current = v;
+        }
+      }
+      return result + current;
+    };
+    // "第三十七条" → "37" を抽出
+    const m = articleNum.match(/第([一-九十百千]+)条/);
+    if (m) {
+      const n = parseKanji(m[1]);
+      if (!isNaN(n)) return `第${n}条`;
+    }
+    // 既に算用数字の場合はそのまま
+    return articleNum;
+  };
+
   const getArticleRange = useCallback((struct: LawStructure): { first: string; last: string } | null => {
     const collectArticles = (s: LawStructure): ParsedArticle[] => [
       ...s.articles,
@@ -382,8 +412,8 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     ];
     const all = collectArticles(struct);
     if (all.length === 0) return null;
-    const first = all[0].articleNum;
-    const last = all[all.length - 1].articleNum;
+    const first = toArabicArticleNum(all[0].articleNum);
+    const last = toArabicArticleNum(all[all.length - 1].articleNum);
     return first === last ? { first, last: "" } : { first, last };
   }, []);
 

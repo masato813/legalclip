@@ -131,10 +131,9 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
       setArticleFilter("");
       setShowFilter(false);
       addToHistory(law.law_info.law_id, title, law.law_info.law_num);
-      if (struct.length > 0) {
-        const firstKey = `root-0/${struct[0].tag}-${struct[0].num}-${struct[0].title}`;
-        setExpandedSections(new Set([firstKey]));
-      }
+      // 初期状態で全セクションを展開
+      const allKeys = struct.flatMap((s, idx) => collectAllSectionKeys([s], `root-${idx}`));
+      setExpandedSections(new Set(allKeys));
       setExpandedArticles(new Set());
     } catch (err) {
       console.error("法令取得エラー:", err);
@@ -163,10 +162,9 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
       setArticleFilter("");
       setShowFilter(false);
       addToHistory(lawId, extractedTitle, num);
-      if (struct.length > 0) {
-        const firstKey = `root-0/${struct[0].tag}-${struct[0].num}-${struct[0].title}`;
-        setExpandedSections(new Set([firstKey]));
-      }
+      // 初期状態で全セクションを展開
+      const allKeys = struct.flatMap((s, idx) => collectAllSectionKeys([s], `root-${idx}`));
+      setExpandedSections(new Set(allKeys));
       setExpandedArticles(new Set());
     } catch (err) {
       console.error("法令取得エラー:", err);
@@ -376,6 +374,19 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
     return { ...struct, articles: filteredArticles, children: filteredChildren };
   }, [articleFilter, matchesFilter]);
 
+  /** セクション内の全条文を再帰的に収集して最初と最後の条文番号を返す */
+  const getArticleRange = useCallback((struct: LawStructure): { first: string; last: string } | null => {
+    const collectArticles = (s: LawStructure): ParsedArticle[] => [
+      ...s.articles,
+      ...s.children.flatMap(collectArticles),
+    ];
+    const all = collectArticles(struct);
+    if (all.length === 0) return null;
+    const first = all[0].articleNum;
+    const last = all[all.length - 1].articleNum;
+    return first === last ? { first, last: "" } : { first, last };
+  }, []);
+
   // 全セクションキーを収集するヘルパー
   const collectAllSectionKeys = useCallback((structs: LawStructure[], parentKey = ""): string[] => {
     const keys: string[] = [];
@@ -573,6 +584,16 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
               <span className="w-3.5 shrink-0" />
             )}
             <span className="text-slate-700 truncate">{struct.title}</span>
+            {(() => {
+              const range = getArticleRange(struct);
+              if (!range) return null;
+              const rangeText = range.last
+                ? `（${range.first}〜${range.last}）`
+                : `（${range.first}）`;
+              return (
+                <span className="text-[9px] text-slate-400 shrink-0 ml-1 font-normal">{rangeText}</span>
+              );
+            })()}
           </button>
 
           <div className="flex items-center gap-1 pr-2 shrink-0">

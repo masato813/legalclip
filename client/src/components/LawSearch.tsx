@@ -1152,7 +1152,10 @@ export default function LawSearch({ onDownloadFullLaw }: LawSearchProps) {
               {isLoadingLaw && (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
-                  <span className="text-xs text-slate-400 ml-2">読み込み中...</span>
+                  <div className="ml-2">
+                    <span className="text-xs text-slate-400 block">読み込み中...</span>
+                    <span className="text-[10px] text-slate-300 block mt-0.5">条文を展開しています。少しお待ちください</span>
+                  </div>
                 </div>
               )}
 

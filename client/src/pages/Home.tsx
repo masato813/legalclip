@@ -166,6 +166,53 @@ function FullLawDownloadDialog({
   // ファイル名: 日付プレフィックスが空なら法令名のみ
   const fileName = datePrefix.trim() ? `${datePrefix.trim()}${lawTitle}` : lawTitle;
 
+  const handlePrintPDF = useCallback(() => {
+    const lines: string[] = [];
+    lines.push(`<h1 style="font-size:18pt;font-weight:bold;text-align:center;margin-bottom:8pt;">${lawTitle}</h1>`);
+    lines.push(`<p style="font-size:10pt;color:#555;text-align:center;margin-bottom:4pt;">（${lawNum}）</p>`);
+    if (lawAmendDate) {
+      lines.push(`<p style="font-size:9pt;color:#777;text-align:center;margin-bottom:16pt;">最終改正: ${lawAmendDate}</p>`);
+    }
+    lines.push(`<hr style="margin-bottom:16pt;">`);
+    for (const article of articles) {
+      lines.push(`<div style="margin-bottom:12pt;page-break-inside:avoid;">`);
+      if (article.articleCaption) {
+        lines.push(`<p style="font-size:9pt;color:#555;margin:0 0 2pt 0;">${article.articleCaption}</p>`);
+      }
+      lines.push(`<p style="font-size:10pt;font-weight:bold;margin:0 0 4pt 0;">${article.articleTitle}</p>`);
+      for (const para of article.paragraphs) {
+        const paraText = para.sentences ? para.sentences.join('') : '';
+        lines.push(`<p style="font-size:10pt;margin:0 0 4pt 1em;text-indent:-1em;padding-left:1em;">${para.paragraphNum ? para.paragraphNum + '\u3000' : ''}${paraText}</p>`);
+        for (const item of (para.items || [])) {
+          const itemTitle = item.title || '';
+          const itemText = item.sentences ? item.sentences.join('') : '';
+          lines.push(`<p style="font-size:10pt;margin:0 0 2pt 2em;text-indent:-1em;padding-left:1em;">${itemTitle ? itemTitle + '\u3000' : ''}${itemText}</p>`);
+        }
+        if (para.tableStruct) {
+          lines.push(`<table style="border-collapse:collapse;margin:4pt 0 4pt 1em;font-size:9pt;">`);
+          for (const row of para.tableStruct.rows) {
+            lines.push(`<tr>`);
+            for (const cell of row.cells) {
+              lines.push(`<td style="border:1px solid #888;padding:3px 6px;vertical-align:top;">${cell.text}</td>`);
+            }
+            lines.push(`</tr>`);
+          }
+          lines.push(`</table>`);
+        }
+      }
+      lines.push(`</div>`);
+    }
+    const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${fileName}</title><style>@page{size:A4;margin:20mm 18mm;}body{font-family:'MS Mincho','Hiragino Mincho ProN',serif;color:#000;}</style></head><body>${lines.join('')}</body></html>`;
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      setTimeout(() => { w.print(); }, 500);
+    }
+    onClose();
+  }, [lawTitle, lawNum, lawAmendDate, articles, fileName, onClose]);
+
   const handleDownload = useCallback(
     async (format: "docx" | "txt" | "md") => {
       setIsGenerating(true);
@@ -319,6 +366,24 @@ function FullLawDownloadDialog({
                   </p>
                   <p className="text-[11px] text-slate-400">
                     Markdown形式で保存
+                  </p>
+                </div>
+              </button>
+
+              <button
+                onClick={handlePrintPDF}
+                disabled={isGenerating}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-slate-200 hover:border-red-300 hover:bg-red-50/50 transition-all text-left group disabled:opacity-50"
+              >
+                <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                  <FileDown className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 group-hover:text-red-700 transition-colors">
+                    PDF（印刷）
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    ブラウザの印刷ダイアログからPDF保存
                   </p>
                 </div>
               </button>

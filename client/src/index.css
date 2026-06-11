@@ -190,3 +190,77 @@
     animation: drop-pulse 1.5s ease-in-out infinite;
   }
 }
+
+/* ===== 印刷・PDF出力スタイル ===== */
+@media print {
+  /* ページ設定 */
+  @page {
+    size: A4;
+    margin: 20mm 18mm 20mm 18mm;
+  }
+
+  /* 印刷時に非表示にする要素 */
+  .no-print {
+    display: none !important;
+  }
+
+  /* 印刷対象エリアのみ表示 */
+  body > * {
+    display: none !important;
+  }
+
+  #print-area {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* 条文テキスト */
+  #print-area * {
+    color: black !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-color: #ccc !important;
+  }
+
+  /* 表のスタイル */
+  #print-area table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    page-break-inside: avoid;
+  }
+
+  #print-area table td,
+  #print-area table th {
+    border: 1px solid #888 !important;
+    padding: 4px 6px !important;
+    font-size: 10pt !important;
+    vertical-align: top !important;
+  }
+
+  /* 条文ブロックの改ページ制御 */
+  #print-area .article-block {
+    page-break-inside: avoid;
+  }
+
+  /* ドラッグハンドルや操作ボタンを非表示 */
+  #print-area [data-drag-handle],
+  #print-area button,
+  #print-area .drag-handle {
+    display: none !important;
+  }
+
+  /* 入力フィールドをテキストとして表示 */
+  #print-area input[type="text"],
+  #print-area textarea {
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+    resize: none !important;
+  }
+}

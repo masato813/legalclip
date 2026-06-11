@@ -836,6 +836,17 @@ export default function PaperEditor() {
     }
   }, [insertArticleAt, getDropIndex]);
 
+  const handlePrintPDF = useCallback(() => {
+    if (!paperRef.current) return;
+    // print-area idを一時的に付与
+    paperRef.current.id = "print-area";
+    window.print();
+    // 印刷ダイアログが閉じた後にidを削除
+    setTimeout(() => {
+      if (paperRef.current) paperRef.current.id = "";
+    }, 1000);
+  }, [paperRef]);
+
   const handleDownload = useCallback(async (format: "docx" | "txt" | "md") => {
     if (clippedArticles.length === 0) return;
     setIsGenerating(true);
@@ -916,6 +927,9 @@ export default function PaperEditor() {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleDownload("md")} className="gap-2 text-xs">
                 <FileDown className="w-3.5 h-3.5" />Markdown (.md)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handlePrintPDF} className="gap-2 text-xs">
+                <FileDown className="w-3.5 h-3.5" />PDF（印刷）
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
